@@ -18,7 +18,16 @@ public static class ImpactExplosion
     private static Material volumeRimMaterial;
     private static Material volumeSmokeMaterial;
     private static Material shockwaveMaterial;
+    private static Material tracerSparkMaterial;
     private static Texture2D blobTexture;
+    private static AudioClip ricochetClip;
+    private static AudioClip explosionClip;
+
+    public static void ConfigureAudio(AudioClip ricochet, AudioClip explosion)
+    {
+        ricochetClip = ricochet;
+        explosionClip = explosion;
+    }
 
     public static void Spawn(Vector3 position)
     {
@@ -26,8 +35,10 @@ public static class ImpactExplosion
         explosion.transform.position = position;
 
         PushRigidbodies(position);
+        PlayExplosionAudio(explosion.transform);
         SpawnFlashLight(explosion.transform);
         CreateShockwave(explosion.transform);
+        CreateTracerSparks(explosion.transform);
         if (ActiveStyle == ExplosionStyle.Volumetric)
         {
             SpawnVolumetricExplosion(explosion.transform);
@@ -38,6 +49,36 @@ public static class ImpactExplosion
         }
 
         Object.Destroy(explosion, 1.4f);
+    }
+
+    private static void PlayExplosionAudio(Transform parent)
+    {
+        PlayOneShot3D(parent, "Ricochet Audio", ricochetClip, 0.2f);
+        PlayOneShot3D(parent, "Explosion Audio", explosionClip, 1.3f);
+    }
+
+    private static void PlayOneShot3D(Transform parent, string objectName, AudioClip clip, float volume)
+    {
+        if (clip == null)
+        {
+            return;
+        }
+
+        GameObject sourceObject = new GameObject(objectName);
+        sourceObject.transform.SetParent(parent, false);
+        sourceObject.transform.localPosition = Vector3.zero;
+
+        AudioSource source = sourceObject.AddComponent<AudioSource>();
+        source.playOnAwake = false;
+        source.loop = false;
+        source.spatialBlend = 1f;
+        source.rolloffMode = AudioRolloffMode.Linear;
+        source.minDistance = 12f;
+        source.maxDistance = 210f;
+        source.dopplerLevel = 0.05f;
+        source.PlayOneShot(clip, volume);
+
+        Object.Destroy(sourceObject, clip.length + 0.2f);
     }
 
     private static void SpawnVolumetricExplosion(Transform parent)
@@ -95,6 +136,48 @@ public static class ImpactExplosion
         pulse.Configure(renderer, 0.34f, 5.2f, new Color(1f, 0.82f, 0.3f, 0.34f));
     }
 
+    private static void CreateTracerSparks(Transform parent)
+    {
+        const int sparkCount = 30;
+        for (int i = 0; i < sparkCount; i++)
+        {
+            Vector3 direction = Random.onUnitSphere;
+            if (direction.y < 0f)
+            {
+                direction.y = -direction.y;
+            }
+
+            direction.y = Mathf.Max(0.04f, direction.y);
+            direction.Normalize();
+
+            float speed = Random.Range(28f, 48f);
+            float lifetime = Random.Range(0.48f, 0.72f);
+            float width = Random.Range(0.24f, 0.4f);
+
+            GameObject spark = new GameObject("Explosion Trail Spark");
+            spark.transform.SetParent(parent, false);
+            spark.transform.localPosition = Vector3.up * Random.Range(0.75f, 1.35f) + direction * Random.Range(0.12f, 0.55f);
+
+            TrailRenderer trail = spark.AddComponent<TrailRenderer>();
+            trail.time = Random.Range(0.52f, 0.82f);
+            trail.startWidth = width;
+            trail.endWidth = 0f;
+            trail.minVertexDistance = 0.03f;
+            trail.numCornerVertices = 4;
+            trail.numCapVertices = 4;
+            trail.alignment = LineAlignment.View;
+            trail.textureMode = LineTextureMode.Stretch;
+            trail.shadowCastingMode = ShadowCastingMode.Off;
+            trail.receiveShadows = false;
+            trail.emitting = true;
+            trail.colorGradient = CreateSparkTrailGradient();
+            trail.sharedMaterial = GetTracerSparkMaterial();
+
+            TrailSpark sparkMotion = spark.AddComponent<TrailSpark>();
+            sparkMotion.Configure(direction * speed, lifetime, trail);
+        }
+    }
+
     private static void CreateVolumetricBlob(Transform parent, Vector3 offset, Vector3 travelDirection, float size, float delay, float lifetime)
     {
         GameObject rim = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -113,7 +196,7 @@ public static class ImpactExplosion
             offset,
             offset + travelDirection * 1.85f,
             Vector3.one * size * 1.08f,
-            new Color(1f, 0.47f, 0.05f, 1f),
+            new Color(1f, 0.68f, 0.08f, 1f),
             new Color(0.34f, 0.12f, 0.02f, 0f),
             delay,
             lifetime,
@@ -135,7 +218,7 @@ public static class ImpactExplosion
             Vector3.zero,
             Vector3.zero,
             Vector3.one * 0.88f,
-            new Color(1f, 0.94f, 0.28f, 1f),
+            new Color(1f, 1f, 0.46f, 1f),
             new Color(1f, 0.42f, 0.04f, 0f),
             delay + 0.02f,
             lifetime * 0.75f,
@@ -372,12 +455,12 @@ public static class ImpactExplosion
         Light light = lightObject.AddComponent<Light>();
         light.type = LightType.Point;
         light.color = new Color(1f, 0.62f, 0.12f);
-        light.range = 16f;
-        light.intensity = 5.5f;
+        light.range = 24f;
+        light.intensity = 9.5f;
         light.shadows = LightShadows.None;
 
         ExplosionLightFade fade = lightObject.AddComponent<ExplosionLightFade>();
-        fade.Configure(0.22f, 5.5f);
+        fade.Configure(0.32f, 9.5f);
     }
 
     private static void PushRigidbodies(Vector3 position)
@@ -427,7 +510,7 @@ public static class ImpactExplosion
             return volumeHotMaterial;
         }
 
-        volumeHotMaterial = CreateVolumeMaterial("Volumetric Explosion Hot Material", new Color(1f, 0.88f, 0.2f, 1f), 7.5f);
+        volumeHotMaterial = CreateVolumeMaterial("Volumetric Explosion Hot Material", new Color(1f, 0.98f, 0.34f, 1f), 13f);
         return volumeHotMaterial;
     }
 
@@ -438,7 +521,7 @@ public static class ImpactExplosion
             return volumeRimMaterial;
         }
 
-        volumeRimMaterial = CreateVolumeMaterial("Volumetric Explosion Rim Material", new Color(1f, 0.34f, 0.04f, 1f), 4.2f);
+        volumeRimMaterial = CreateVolumeMaterial("Volumetric Explosion Rim Material", new Color(1f, 0.52f, 0.06f, 1f), 7.5f);
         return volumeRimMaterial;
     }
 
@@ -460,13 +543,56 @@ public static class ImpactExplosion
             return shockwaveMaterial;
         }
 
-        shockwaveMaterial = CreateVolumeMaterial("Explosion Shockwave Material", new Color(1f, 0.75f, 0.18f, 0.28f), 2.2f);
+        shockwaveMaterial = CreateVolumeMaterial("Explosion Shockwave Material", new Color(1f, 0.88f, 0.28f, 0.38f), 4f);
         if (shockwaveMaterial.HasProperty("_Smoothness"))
         {
             shockwaveMaterial.SetFloat("_Smoothness", 0.8f);
         }
 
         return shockwaveMaterial;
+    }
+
+    private static Material GetTracerSparkMaterial()
+    {
+        if (tracerSparkMaterial != null)
+        {
+            return tracerSparkMaterial;
+        }
+
+        tracerSparkMaterial = CreateParticleMaterial("Explosion Tracer Spark Material");
+        SetMaterialColor(tracerSparkMaterial, new Color(1f, 0.82f, 0.12f, 1f));
+        if (tracerSparkMaterial.HasProperty("_EmissionColor"))
+        {
+            tracerSparkMaterial.EnableKeyword("_EMISSION");
+            tracerSparkMaterial.SetColor("_EmissionColor", new Color(1f, 0.68f, 0.12f, 1f) * 13f);
+        }
+
+        if (tracerSparkMaterial.HasProperty("_DstBlend"))
+        {
+            tracerSparkMaterial.SetFloat("_DstBlend", (float)BlendMode.One);
+        }
+
+        tracerSparkMaterial.EnableKeyword("_ALPHAPREMULTIPLY_ON");
+        return tracerSparkMaterial;
+    }
+
+    private static Gradient CreateSparkTrailGradient()
+    {
+        Gradient gradient = new Gradient();
+        gradient.SetKeys(
+            new[]
+            {
+                new GradientColorKey(new Color(5.2f, 2.35f, 0.55f, 1f), 0f),
+                new GradientColorKey(new Color(2.8f, 0.82f, 0.12f, 1f), 0.46f),
+                new GradientColorKey(new Color(0.85f, 0.16f, 0.02f, 1f), 1f)
+            },
+            new[]
+            {
+                new GradientAlphaKey(1f, 0f),
+                new GradientAlphaKey(0.5f, 0.45f),
+                new GradientAlphaKey(0f, 1f)
+            });
+        return gradient;
     }
 
     private static Material CreateVolumeMaterial(string materialName, Color color, float emissionMultiplier)
@@ -879,4 +1005,53 @@ public static class ImpactExplosion
             }
         }
     }
+
+    private sealed class TrailSpark : MonoBehaviour
+    {
+        private TrailRenderer trail;
+        private Vector3 localVelocity;
+        private float lifetime;
+        private float startTime;
+        private float gravity;
+
+        public void Configure(Vector3 velocity, float life, TrailRenderer sparkTrail)
+        {
+            localVelocity = velocity;
+            lifetime = Mathf.Max(0.01f, life);
+            trail = sparkTrail;
+            startTime = Time.time;
+            gravity = Random.Range(20f, 34f);
+        }
+
+        private void Update()
+        {
+            float age = Time.time - startTime;
+            float t = Mathf.Clamp01(age / lifetime);
+            float speedMultiplier = Mathf.Lerp(1f, 0.18f, t * t);
+            localVelocity += Vector3.down * (gravity * Time.deltaTime);
+            transform.localPosition += localVelocity * (speedMultiplier * Time.deltaTime);
+
+            if (trail != null)
+            {
+                trail.startWidth = Mathf.Lerp(trail.startWidth, 0f, t * 0.08f);
+            }
+
+            if (age >= lifetime)
+            {
+                if (trail != null)
+                {
+                    trail.emitting = false;
+                    transform.SetParent(null, true);
+                    Destroy(gameObject, trail.time + 0.05f);
+                }
+                else
+                {
+                    Destroy(gameObject);
+                }
+
+                enabled = false;
+            }
+        }
+    }
+
 }

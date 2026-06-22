@@ -17,6 +17,10 @@ public sealed class StaticEnemyTank : MonoBehaviour
     [SerializeField] private float fireCooldown = 1.35f;
     [SerializeField] private float projectileSpeed = 108f;
     [SerializeField] private int damage = 25;
+    [SerializeField] private AudioClip shotClip;
+    [SerializeField] private AudioSource shotSource;
+    [SerializeField] private float shotVolume = 1f;
+    [SerializeField] private MuzzleShotEffect shotEffect;
 
     private float lastShotTime = -999f;
 
@@ -39,6 +43,18 @@ public sealed class StaticEnemyTank : MonoBehaviour
         fireRange = Mathf.Max(0f, newFireRange);
         localForwardAxis = TankPlaneMath.SafeLocalForwardAxis(forwardAxis);
         projectileForwardAxis = TankPlaneMath.SafeLocalForwardAxis(forwardAxis);
+        EnsureShotSource();
+    }
+
+    public void ConfigureShotAudio(AudioClip clip)
+    {
+        shotClip = clip;
+        EnsureShotSource();
+    }
+
+    public void ConfigureShotEffect(MuzzleShotEffect effect)
+    {
+        shotEffect = effect;
     }
 
     private void Update()
@@ -91,6 +107,48 @@ public sealed class StaticEnemyTank : MonoBehaviour
         projectileMovement.Launch(direction, projectileSpeed, projectileForwardAxis);
         IgnoreOwnCollisions(projectile);
         lastShotTime = Time.time;
+        PlayShotAudio(spawnPosition);
+        if (shotEffect != null)
+        {
+            shotEffect.Play();
+        }
+    }
+
+    private void PlayShotAudio(Vector3 position)
+    {
+        if (shotSource == null || shotClip == null)
+        {
+            return;
+        }
+
+        shotSource.transform.position = position;
+        shotSource.PlayOneShot(shotClip, shotVolume);
+    }
+
+    private void EnsureShotSource()
+    {
+        Transform parent = muzzlePoint != null ? muzzlePoint : transform;
+        if (shotSource == null || shotSource.transform.parent != parent)
+        {
+            Transform existing = parent.Find("Shot Audio");
+            GameObject sourceObject = existing != null ? existing.gameObject : new GameObject("Shot Audio");
+            sourceObject.transform.SetParent(parent, false);
+            sourceObject.transform.localPosition = Vector3.zero;
+            sourceObject.transform.localRotation = Quaternion.identity;
+            shotSource = sourceObject.GetComponent<AudioSource>();
+            if (shotSource == null)
+            {
+                shotSource = sourceObject.AddComponent<AudioSource>();
+            }
+        }
+
+        shotSource.playOnAwake = false;
+        shotSource.loop = false;
+        shotSource.spatialBlend = 1f;
+        shotSource.rolloffMode = AudioRolloffMode.Linear;
+        shotSource.minDistance = 28f;
+        shotSource.maxDistance = 260f;
+        shotSource.dopplerLevel = 0.1f;
     }
 
     private void IgnoreOwnCollisions(GameObject projectile)
@@ -119,5 +177,6 @@ public sealed class StaticEnemyTank : MonoBehaviour
         fireCooldown = Mathf.Max(0.01f, fireCooldown);
         projectileSpeed = Mathf.Max(0f, projectileSpeed);
         damage = Mathf.Max(0, damage);
+        shotVolume = Mathf.Clamp01(shotVolume);
     }
 }

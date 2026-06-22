@@ -11,10 +11,19 @@ using UnityEditor;
 public static class TankiGameplayBootstrap
 {
     private const string TankPrefabPath = "Assets/Models/Tank/Tank.prefab";
+    private const string TankDesertPrefabPath = "Assets/Models/Tank/Tank Desert.prefab";
     private const string MissilePrefabPath = "Assets/Models/Missle/Missile.prefab";
     private const string BoxPrefabPath = "Assets/Models/Box/Box.prefab";
+    private const string DesertBodyMaterialPath = "Assets/Models/Tank/Desert.mat";
+    private const string RegularBodyMaterialName = "M_Tank_Body";
     private const string ScopeSpritePath = "Assets/UI/Scope.png";
     private const string HitMarkerSpritePath = "Assets/UI/Hit_Marker.png";
+    private const string AmbientClipPath = "Assets/Sounds/Ambient.mp3";
+    private const string MovementClipPath = "Assets/Sounds/Movement.mp3";
+    private const string MusicAmbientClipPath = "Assets/Sounds/Music_Ambient.mp3";
+    private const string ShotClipPath = "Assets/Sounds/Shot.mp3";
+    private const string RicochetClipPath = "Assets/Sounds/Richoshet.mp3";
+    private const string ExplosionClipPath = "Assets/Sounds/Explosion.mp3";
     private const float GroundY = 0f;
     private const float FloorSize = 960f;
     private const float FloorTileSize = 8f;
@@ -114,6 +123,15 @@ public static class TankiGameplayBootstrap
         shooter.ConfigureProjectileSpeed(ProjectileSpeed);
         shooter.ConfigureDamage(TankTeam.Player, ProjectileDamage);
 
+        TankAudioController tankAudio = EnsureComponent<TankAudioController>(tank);
+        tankAudio.Configure(controller, shooter, muzzlePoint, LoadMovementClip(), LoadShotClip());
+
+        MuzzleShotEffect muzzleEffect = EnsureComponent<MuzzleShotEffect>(tank);
+        muzzleEffect.Configure(muzzlePoint, DefaultForwardAxis, shooter);
+
+        TankTrackDust trackDust = EnsureComponent<TankTrackDust>(tank);
+        trackDust.Configure(controller, DefaultForwardAxis);
+
         if (camera != null)
         {
             TopDownCameraFollow follow = EnsureComponent<TopDownCameraFollow>(camera.gameObject);
@@ -125,9 +143,12 @@ public static class TankiGameplayBootstrap
 
         EnsureGridFloor();
         EnsureSceneLight();
+        EnsureSceneAudio();
+        ImpactExplosion.ConfigureAudio(LoadRicochetClip(), LoadExplosionClip());
         EnsurePhysicsBoxes(persistent);
         EnsureEnemies(missilePrefab, playerHealth, persistent);
-        EnsurePlayerHealthBar(playerHealth);
+        GameObject playerUi = EnsurePlayerHealthBar(playerHealth);
+        EnsureTankSelectionMenu(tank, playerUi.transform);
 
         if (persistent)
         {
@@ -395,7 +416,7 @@ public static class TankiGameplayBootstrap
 
     private static void EnsureEnemies(GameObject missilePrefab, TankHealth playerHealth, bool persistent)
     {
-        GameObject tankPrefab = LoadTankPrefab();
+        GameObject tankPrefab = LoadEnemyTankPrefab();
         if (tankPrefab == null || playerHealth == null)
         {
             return;
@@ -419,7 +440,12 @@ public static class TankiGameplayBootstrap
 
             Vector3 enemyPosition = DefaultEnemyPositions[i];
             enemyPosition.y = GetGroundY(enemyPosition);
-            enemy.transform.SetPositionAndRotation(enemyPosition, Quaternion.identity);
+            Vector3 directionToPlayer = TankPlaneMath.Flatten(playerHealth.transform.position - enemyPosition);
+            Quaternion enemyRotation = directionToPlayer.sqrMagnitude > 0.001f
+                ? TankPlaneMath.RotationLookingAlong(directionToPlayer, DefaultForwardAxis)
+                : Quaternion.identity;
+            enemy.transform.SetPositionAndRotation(enemyPosition, enemyRotation);
+            ApplyDesertTankSkin(enemy);
             ConfigureEnemy(enemy, missilePrefab, playerHealth);
 
 #if UNITY_EDITOR
@@ -479,6 +505,53 @@ public static class TankiGameplayBootstrap
 
         StaticEnemyTank enemyTank = EnsureComponent<StaticEnemyTank>(enemy);
         enemyTank.Configure(playerHealth, turret, muzzlePoint, missilePrefab, ProjectileSpeed, ProjectileDamage, EnemyAttackRange, DefaultForwardAxis);
+        enemyTank.ConfigureShotAudio(LoadShotClip());
+        MuzzleShotEffect muzzleEffect = EnsureComponent<MuzzleShotEffect>(enemy);
+        muzzleEffect.Configure(muzzlePoint, DefaultForwardAxis);
+        enemyTank.ConfigureShotEffect(muzzleEffect);
+    }
+
+    public static void ApplyDesertTankSkin(GameObject tank)
+    {
+        Material desertMaterial = LoadDesertBodyMaterial();
+        if (tank == null || desertMaterial == null)
+        {
+            return;
+        }
+
+        Renderer[] renderers = tank.GetComponentsInChildren<Renderer>(true);
+        foreach (Renderer renderer in renderers)
+        {
+            Material[] materials = renderer.sharedMaterials;
+            bool changed = false;
+            for (int i = 0; i < materials.Length; i++)
+            {
+                Material material = materials[i];
+                if (material == null)
+                {
+                    continue;
+                }
+
+                if (material == desertMaterial || material.name.StartsWith(RegularBodyMaterialName, System.StringComparison.Ordinal))
+                {
+                    materials[i] = desertMaterial;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                renderer.sharedMaterials = materials;
+            }
+        }
+    }
+
+    private static void EnsureSceneAudio()
+    {
+        SceneAudioController existingAudio = Object.FindFirstObjectByType<SceneAudioController>();
+        GameObject audioObject = existingAudio != null ? existingAudio.gameObject : new GameObject("Scene Audio");
+        SceneAudioController sceneAudio = EnsureComponent<SceneAudioController>(audioObject);
+        sceneAudio.Configure(LoadAmbientClip(), LoadMusicAmbientClip());
     }
 
     public static GameObject EnsureGridFloor()
@@ -857,10 +930,68 @@ public static class TankiGameplayBootstrap
 #endif
     }
 
+    private static GameObject LoadEnemyTankPrefab()
+    {
+#if UNITY_EDITOR
+        GameObject desertTank = AssetDatabase.LoadAssetAtPath<GameObject>(TankDesertPrefabPath);
+        return desertTank != null ? desertTank : AssetDatabase.LoadAssetAtPath<GameObject>(TankPrefabPath);
+#else
+        return null;
+#endif
+    }
+
     private static GameObject LoadBoxPrefab()
     {
 #if UNITY_EDITOR
         return AssetDatabase.LoadAssetAtPath<GameObject>(BoxPrefabPath);
+#else
+        return null;
+#endif
+    }
+
+    private static Material LoadDesertBodyMaterial()
+    {
+#if UNITY_EDITOR
+        return AssetDatabase.LoadAssetAtPath<Material>(DesertBodyMaterialPath);
+#else
+        return null;
+#endif
+    }
+
+    private static AudioClip LoadAmbientClip()
+    {
+        return LoadAudioClip(AmbientClipPath);
+    }
+
+    private static AudioClip LoadMovementClip()
+    {
+        return LoadAudioClip(MovementClipPath);
+    }
+
+    private static AudioClip LoadMusicAmbientClip()
+    {
+        return LoadAudioClip(MusicAmbientClipPath);
+    }
+
+    private static AudioClip LoadShotClip()
+    {
+        return LoadAudioClip(ShotClipPath);
+    }
+
+    private static AudioClip LoadRicochetClip()
+    {
+        return LoadAudioClip(RicochetClipPath);
+    }
+
+    private static AudioClip LoadExplosionClip()
+    {
+        return LoadAudioClip(ExplosionClipPath);
+    }
+
+    private static AudioClip LoadAudioClip(string path)
+    {
+#if UNITY_EDITOR
+        return AssetDatabase.LoadAssetAtPath<AudioClip>(path);
 #else
         return null;
 #endif
@@ -908,6 +1039,71 @@ public static class TankiGameplayBootstrap
         PlayerHealthBar healthBar = EnsureComponent<PlayerHealthBar>(root);
         healthBar.Configure(playerHealth, fillImage, gameOverPanel, restartButton, gameplayCursor);
         return root;
+    }
+
+    private static void EnsureTankSelectionMenu(GameObject tank, Transform parent)
+    {
+        if (tank == null || parent == null)
+        {
+            return;
+        }
+
+        RectTransform panelRect;
+        Image panelImage = GetOrCreateImage(parent, "Tank Selection Panel", out panelRect);
+        panelRect.anchorMin = Vector2.zero;
+        panelRect.anchorMax = Vector2.one;
+        panelRect.pivot = new Vector2(0.5f, 0.5f);
+        panelRect.anchoredPosition = Vector2.zero;
+        panelRect.offsetMin = Vector2.zero;
+        panelRect.offsetMax = Vector2.zero;
+        panelImage.color = new Color(0f, 0f, 0f, 0.68f);
+        panelImage.raycastTarget = true;
+
+        RectTransform titleRect;
+        Text title = GetOrCreateText(panelRect, "Tank Selection Title", out titleRect);
+        titleRect.anchorMin = new Vector2(0.5f, 0.5f);
+        titleRect.anchorMax = new Vector2(0.5f, 0.5f);
+        titleRect.pivot = new Vector2(0.5f, 0.5f);
+        titleRect.anchoredPosition = new Vector2(0f, 78f);
+        titleRect.sizeDelta = new Vector2(460f, 44f);
+        title.alignment = TextAnchor.MiddleCenter;
+        title.text = "Choose Your Tank";
+        title.fontSize = 30;
+        title.color = Color.white;
+
+        Button normalButton = EnsureTankSelectionButton(panelRect, "Normal Tank Button", "Normal", new Vector2(-120f, 0f), new Color(0.12f, 0.52f, 0.18f, 1f));
+        Button desertButton = EnsureTankSelectionButton(panelRect, "Desert Tank Button", "Desert", new Vector2(120f, 0f), new Color(0.72f, 0.48f, 0.18f, 1f));
+
+        TankSelectionMenu menu = EnsureComponent<TankSelectionMenu>(parent.gameObject);
+        menu.Configure(tank, panelImage.gameObject, normalButton, desertButton);
+    }
+
+    private static Button EnsureTankSelectionButton(Transform parent, string objectName, string label, Vector2 position, Color color)
+    {
+        RectTransform buttonRect;
+        Image buttonImage = GetOrCreateImage(parent, objectName, out buttonRect);
+        buttonRect.anchorMin = new Vector2(0.5f, 0.5f);
+        buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
+        buttonRect.pivot = new Vector2(0.5f, 0.5f);
+        buttonRect.anchoredPosition = position;
+        buttonRect.sizeDelta = new Vector2(190f, 56f);
+        buttonImage.color = color;
+        buttonImage.raycastTarget = true;
+
+        Button button = EnsureComponent<Button>(buttonImage.gameObject);
+
+        RectTransform textRect;
+        Text buttonText = GetOrCreateText(buttonRect, "Text", out textRect);
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
+        buttonText.alignment = TextAnchor.MiddleCenter;
+        buttonText.text = label;
+        buttonText.fontSize = 23;
+        buttonText.color = Color.white;
+
+        return button;
     }
 
     private static void EnsureEventSystem()

@@ -21,6 +21,8 @@ public sealed class TankController : MonoBehaviour
 
     public Vector3 LocalForwardAxis => TankPlaneMath.SafeLocalForwardAxis(localForwardAxis);
     public Vector3 ForwardOnPlane => TankPlaneMath.Flatten(transform.TransformDirection(LocalForwardAxis));
+    public float CurrentSpeed => currentSpeed;
+    public float CurrentSpeedNormalized => Mathf.Clamp01(Mathf.Abs(currentSpeed) / Mathf.Max(0.01f, Mathf.Max(forwardSpeed, reverseSpeed)));
 
     private void Reset()
     {
@@ -56,6 +58,10 @@ public sealed class TankController : MonoBehaviour
     {
         float throttle = ReadThrottle();
         float turn = ReadTurn();
+        if (throttle < -0.01f)
+        {
+            turn = -turn;
+        }
 
         Quaternion nextRotation = body.rotation * Quaternion.Euler(0f, turn * turnSpeed * Time.fixedDeltaTime, 0f);
         body.MoveRotation(nextRotation);

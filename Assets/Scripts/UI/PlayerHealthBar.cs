@@ -6,6 +6,8 @@ using UnityEngine.UI;
 [DisallowMultipleComponent]
 public sealed class PlayerHealthBar : MonoBehaviour
 {
+    public static bool GameplayInputBlocked { get; set; }
+
     [SerializeField] private TankHealth target;
     [SerializeField] private Image fillImage;
     [SerializeField] private RectTransform fillRect;
@@ -26,6 +28,7 @@ public sealed class PlayerHealthBar : MonoBehaviour
         gameplayCursorImage = cursorImage;
         gameplayCursorRect = cursorImage != null ? cursorImage.rectTransform : null;
         gameOverShown = false;
+        GameplayInputBlocked = false;
 
         Time.timeScale = 1f;
         SetPlayerControlEnabled(true);
@@ -84,7 +87,7 @@ public sealed class PlayerHealthBar : MonoBehaviour
 
     private void SetGameplayCursorActive(bool isActive)
     {
-        bool showGameplayCursor = isActive && Application.isPlaying;
+        bool showGameplayCursor = isActive && !GameplayInputBlocked && Application.isPlaying;
         if (gameplayCursorImage != null)
         {
             gameplayCursorImage.gameObject.SetActive(showGameplayCursor);
@@ -93,7 +96,7 @@ public sealed class PlayerHealthBar : MonoBehaviour
 
         if (Application.isPlaying)
         {
-            Cursor.visible = !isActive;
+            Cursor.visible = !showGameplayCursor;
             Cursor.lockState = CursorLockMode.None;
         }
     }
@@ -105,7 +108,7 @@ public sealed class PlayerHealthBar : MonoBehaviour
             return;
         }
 
-        bool isActive = !gameOverShown && target != null && target.IsAlive;
+        bool isActive = !gameOverShown && !GameplayInputBlocked && target != null && target.IsAlive;
         if (gameplayCursorImage != null && gameplayCursorImage.gameObject.activeSelf != isActive)
         {
             gameplayCursorImage.gameObject.SetActive(isActive);
@@ -113,6 +116,12 @@ public sealed class PlayerHealthBar : MonoBehaviour
 
         if (!isActive)
         {
+            if (GameplayInputBlocked)
+            {
+                Cursor.visible = true;
+                Cursor.lockState = CursorLockMode.None;
+            }
+
             return;
         }
 
