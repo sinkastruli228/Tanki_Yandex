@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 #if UNITY_EDITOR
@@ -61,10 +62,27 @@ public static class TankiGameplayBootstrap
         new Vector3(0f, 68f, 0f),
         new Vector3(0f, 85f, 0f)
     };
+    private static int lastSetupFrame = -1;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void RegisterSceneReloadSetup()
+    {
+        SceneManager.sceneLoaded -= HandleSceneLoaded;
+        SceneManager.sceneLoaded += HandleSceneLoaded;
+    }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void SetupSceneOnPlay()
     {
+        if (lastSetupFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        lastSetupFrame = Time.frameCount;
+        Time.timeScale = 1f;
+        PlayerHealthBar.GameplayInputBlocked = false;
+
         GameObject tank = FindTankInScene();
         if (tank == null)
         {
@@ -72,6 +90,11 @@ public static class TankiGameplayBootstrap
         }
 
         ConfigureTank(tank, LoadMissilePrefab(), Camera.main, false);
+    }
+
+    private static void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        SetupSceneOnPlay();
     }
 
     public static void ConfigureTank(GameObject tank, GameObject missilePrefab, Camera camera, bool persistent)
@@ -143,6 +166,8 @@ public static class TankiGameplayBootstrap
 
         EnsureGridFloor();
         EnsureSceneLight();
+        EnsureRockShadows();
+        EnsureWallMeshColliders();
         EnsureSceneAudio();
         ImpactExplosion.ConfigureAudio(LoadRicochetClip(), LoadExplosionClip());
         EnsurePhysicsBoxes(persistent);
@@ -660,6 +685,92 @@ public static class TankiGameplayBootstrap
 
         Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
         foreach (Renderer renderer in renderers)
+        {
+            renderer.shadowCastingMode = ShadowCastingMode.On;
+            renderer.receiveShadows = true;
+        }
+    }
+
+    private static void EnsureRockShadows()
+    {
+        Renderer[] renderers = Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None);
+        foreach (Renderer renderer in renderers)
+        {
+            if (renderer == null || renderer is ParticleSystemRenderer)
+            {
+                continue;
+            }
+
+            string objectName = renderer.gameObject.name;
+            string rootName = renderer.transform.root != null ? renderer.transform.root.name : string.Empty;
+            if (!objectName.Contains("rock", System.StringComparison.OrdinalIgnoreCase)
+                && !rootName.Contains("rock", System.StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            renderer.shadowCastingMode = ShadowCastingMode.On;
+            renderer.receiveShadows = true;
+        }
+    }
+
+    private static void EnsureWallMeshColliders()
+    {
+        GameObject wallsRoot = GameObject.Find("Walls");
+        if (wallsRoot != null)
+        {
+            ConfigureWallMeshColliders(wallsRoot);
+        }
+
+        MeshFilter[] meshFilters = Object.FindObjectsByType<MeshFilter>(FindObjectsSortMode.None);
+        foreach (MeshFilter meshFilter in meshFilters)
+        {
+            if (meshFilter == null || meshFilter.sharedMesh == null)
+            {
+                continue;
+            }
+
+            string objectName = meshFilter.gameObject.name;
+            string rootName = meshFilter.transform.root != null ? meshFilter.transform.root.name : string.Empty;
+            if (!objectName.Contains("wall", System.StringComparison.OrdinalIgnoreCase)
+                && !objectName.Contains("stolb", System.StringComparison.OrdinalIgnoreCase)
+                && !rootName.Contains("wall", System.StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            ConfigureWallMeshCollider(meshFilter);
+        }
+    }
+
+    private static void ConfigureWallMeshColliders(GameObject root)
+    {
+        MeshFilter[] meshFilters = root.GetComponentsInChildren<MeshFilter>(true);
+        foreach (MeshFilter meshFilter in meshFilters)
+        {
+            ConfigureWallMeshCollider(meshFilter);
+        }
+    }
+
+    private static void ConfigureWallMeshCollider(MeshFilter meshFilter)
+    {
+        if (meshFilter == null || meshFilter.sharedMesh == null)
+        {
+            return;
+        }
+
+        MeshCollider meshCollider = meshFilter.GetComponent<MeshCollider>();
+        if (meshCollider == null)
+        {
+            meshCollider = meshFilter.gameObject.AddComponent<MeshCollider>();
+        }
+
+        meshCollider.sharedMesh = meshFilter.sharedMesh;
+        meshCollider.convex = false;
+        meshCollider.isTrigger = false;
+
+        Renderer renderer = meshFilter.GetComponent<Renderer>();
+        if (renderer != null)
         {
             renderer.shadowCastingMode = ShadowCastingMode.On;
             renderer.receiveShadows = true;
