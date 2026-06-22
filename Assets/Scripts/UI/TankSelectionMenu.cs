@@ -8,15 +8,17 @@ public sealed class TankSelectionMenu : MonoBehaviour
     [SerializeField] private GameObject panelRoot;
     [SerializeField] private Button normalButton;
     [SerializeField] private Button desertButton;
+    [SerializeField] private Button snowButton;
 
     private bool hasSelection;
 
-    public void Configure(GameObject tank, GameObject panel, Button normal, Button desert)
+    public void Configure(GameObject tank, GameObject panel, Button normal, Button desert, Button snow)
     {
         playerTank = tank;
         panelRoot = panel;
         normalButton = normal;
         desertButton = desert;
+        snowButton = snow;
         hasSelection = false;
 
         if (normalButton != null)
@@ -29,6 +31,12 @@ public sealed class TankSelectionMenu : MonoBehaviour
         {
             desertButton.onClick.RemoveListener(SelectDesertTank);
             desertButton.onClick.AddListener(SelectDesertTank);
+        }
+
+        if (snowButton != null)
+        {
+            snowButton.onClick.RemoveListener(SelectSnowTank);
+            snowButton.onClick.AddListener(SelectSnowTank);
         }
 
         if (Application.isPlaying)
@@ -57,12 +65,19 @@ public sealed class TankSelectionMenu : MonoBehaviour
 
     private void SelectNormalTank()
     {
+        TankiGameplayBootstrap.ApplyNormalTankSkin(playerTank);
         CompleteSelection();
     }
 
     private void SelectDesertTank()
     {
         TankiGameplayBootstrap.ApplyDesertTankSkin(playerTank);
+        CompleteSelection();
+    }
+
+    private void SelectSnowTank()
+    {
+        TankiGameplayBootstrap.ApplySnowTankSkin(playerTank);
         CompleteSelection();
     }
 

@@ -13,10 +13,10 @@ public static class TankiGameplayBootstrap
 {
     private const string TankPrefabPath = "Assets/Models/Tank/Tank.prefab";
     private const string TankDesertPrefabPath = "Assets/Models/Tank/Tank Desert.prefab";
+    private const string TankSnowPrefabPath = "Assets/Models/Tank/Tank Snow.prefab";
+    private const string TankEnemyPrefabPath = "Assets/Models/Tank/Tank Enemy.prefab";
     private const string MissilePrefabPath = "Assets/Models/Missle/Missile.prefab";
     private const string BoxPrefabPath = "Assets/Models/Box/Box.prefab";
-    private const string DesertBodyMaterialPath = "Assets/Models/Tank/Desert.mat";
-    private const string RegularBodyMaterialName = "M_Tank_Body";
     private const string ScopeSpritePath = "Assets/UI/Scope.png";
     private const string HitMarkerSpritePath = "Assets/UI/Hit_Marker.png";
     private const string AmbientClipPath = "Assets/Sounds/Ambient.mp3";
@@ -451,6 +451,7 @@ public static class TankiGameplayBootstrap
         {
             string enemyName = $"Enemy Tank {i + 1}";
             GameObject enemy = GameObject.Find(enemyName);
+            bool wasCreated = enemy == null;
             if (enemy == null)
             {
 #if UNITY_EDITOR
@@ -463,14 +464,17 @@ public static class TankiGameplayBootstrap
                 enemy.name = enemyName;
             }
 
-            Vector3 enemyPosition = DefaultEnemyPositions[i];
-            enemyPosition.y = GetGroundY(enemyPosition);
-            Vector3 directionToPlayer = TankPlaneMath.Flatten(playerHealth.transform.position - enemyPosition);
-            Quaternion enemyRotation = directionToPlayer.sqrMagnitude > 0.001f
-                ? TankPlaneMath.RotationLookingAlong(directionToPlayer, DefaultForwardAxis)
-                : Quaternion.identity;
-            enemy.transform.SetPositionAndRotation(enemyPosition, enemyRotation);
-            ApplyDesertTankSkin(enemy);
+            if (wasCreated)
+            {
+                Vector3 enemyPosition = DefaultEnemyPositions[i];
+                enemyPosition.y = GetGroundY(enemyPosition);
+                Vector3 directionToPlayer = TankPlaneMath.Flatten(playerHealth.transform.position - enemyPosition);
+                Quaternion enemyRotation = directionToPlayer.sqrMagnitude > 0.001f
+                    ? TankPlaneMath.RotationLookingAlong(directionToPlayer, DefaultForwardAxis)
+                    : Quaternion.identity;
+                enemy.transform.SetPositionAndRotation(enemyPosition, enemyRotation);
+            }
+
             ConfigureEnemy(enemy, missilePrefab, playerHealth);
 
 #if UNITY_EDITOR
@@ -485,9 +489,18 @@ public static class TankiGameplayBootstrap
     private static void ConfigureEnemy(GameObject enemy, GameObject missilePrefab, TankHealth playerHealth)
     {
         TankController controller = enemy.GetComponent<TankController>();
+        if (controller == null)
+        {
+            controller = enemy.AddComponent<TankController>();
+        }
+
         if (controller != null)
         {
-            controller.enabled = false;
+            controller.enabled = true;
+            controller.ConfigureModelAxis(DefaultForwardAxis);
+            controller.ConfigureMovement(TankForwardSpeed * 0.72f, TankReverseSpeed * 0.55f, TankAcceleration * 0.8f);
+            controller.RefreshMovementPlane();
+            controller.SetExternalInput(0f, 0f);
         }
 
         TankTurretAim mouseAim = enemy.GetComponent<TankTurretAim>();
@@ -538,37 +551,78 @@ public static class TankiGameplayBootstrap
 
     public static void ApplyDesertTankSkin(GameObject tank)
     {
-        Material desertMaterial = LoadDesertBodyMaterial();
-        if (tank == null || desertMaterial == null)
+        ApplyTankMaterialsFromPrefab(tank, LoadDesertTankPrefab());
+    }
+
+    public static void ApplyNormalTankSkin(GameObject tank)
+    {
+        ApplyTankMaterialsFromPrefab(tank, LoadTankPrefab());
+    }
+
+    public static void ApplySnowTankSkin(GameObject tank)
+    {
+        ApplyTankMaterialsFromPrefab(tank, LoadSnowTankPrefab());
+    }
+
+    private static void ApplyTankMaterialsFromPrefab(GameObject tank, GameObject sourcePrefab)
+    {
+        if (tank == null || sourcePrefab == null)
         {
             return;
         }
 
-        Renderer[] renderers = tank.GetComponentsInChildren<Renderer>(true);
+        Renderer[] targetRenderers = tank.GetComponentsInChildren<Renderer>(true);
+        Renderer[] sourceRenderers = sourcePrefab.GetComponentsInChildren<Renderer>(true);
+        foreach (Renderer targetRenderer in targetRenderers)
+        {
+            Renderer sourceRenderer = FindMatchingRenderer(sourceRenderers, sourcePrefab.transform, targetRenderer.transform, tank.transform);
+            if (sourceRenderer == null)
+            {
+                continue;
+            }
+
+            targetRenderer.sharedMaterials = sourceRenderer.sharedMaterials;
+        }
+    }
+
+    private static Renderer FindMatchingRenderer(Renderer[] renderers, Transform sourceRoot, Transform target, Transform targetRoot)
+    {
+        string relativePath = GetRelativePath(target, targetRoot);
         foreach (Renderer renderer in renderers)
         {
-            Material[] materials = renderer.sharedMaterials;
-            bool changed = false;
-            for (int i = 0; i < materials.Length; i++)
+            if (GetRelativePath(renderer.transform, sourceRoot) == relativePath)
             {
-                Material material = materials[i];
-                if (material == null)
-                {
-                    continue;
-                }
-
-                if (material == desertMaterial || material.name.StartsWith(RegularBodyMaterialName, System.StringComparison.Ordinal))
-                {
-                    materials[i] = desertMaterial;
-                    changed = true;
-                }
-            }
-
-            if (changed)
-            {
-                renderer.sharedMaterials = materials;
+                return renderer;
             }
         }
+
+        foreach (Renderer renderer in renderers)
+        {
+            if (renderer.name == target.name)
+            {
+                return renderer;
+            }
+        }
+
+        return null;
+    }
+
+    private static string GetRelativePath(Transform transform, Transform root)
+    {
+        if (transform == null || root == null || transform == root)
+        {
+            return string.Empty;
+        }
+
+        string path = transform.name;
+        Transform current = transform.parent;
+        while (current != null && current != root)
+        {
+            path = $"{current.name}/{path}";
+            current = current.parent;
+        }
+
+        return path;
     }
 
     private static void EnsureSceneAudio()
@@ -1044,8 +1098,26 @@ public static class TankiGameplayBootstrap
     private static GameObject LoadEnemyTankPrefab()
     {
 #if UNITY_EDITOR
-        GameObject desertTank = AssetDatabase.LoadAssetAtPath<GameObject>(TankDesertPrefabPath);
-        return desertTank != null ? desertTank : AssetDatabase.LoadAssetAtPath<GameObject>(TankPrefabPath);
+        GameObject enemyTank = AssetDatabase.LoadAssetAtPath<GameObject>(TankEnemyPrefabPath);
+        return enemyTank != null ? enemyTank : AssetDatabase.LoadAssetAtPath<GameObject>(TankPrefabPath);
+#else
+        return null;
+#endif
+    }
+
+    private static GameObject LoadDesertTankPrefab()
+    {
+#if UNITY_EDITOR
+        return AssetDatabase.LoadAssetAtPath<GameObject>(TankDesertPrefabPath);
+#else
+        return null;
+#endif
+    }
+
+    private static GameObject LoadSnowTankPrefab()
+    {
+#if UNITY_EDITOR
+        return AssetDatabase.LoadAssetAtPath<GameObject>(TankSnowPrefabPath);
 #else
         return null;
 #endif
@@ -1055,15 +1127,6 @@ public static class TankiGameplayBootstrap
     {
 #if UNITY_EDITOR
         return AssetDatabase.LoadAssetAtPath<GameObject>(BoxPrefabPath);
-#else
-        return null;
-#endif
-    }
-
-    private static Material LoadDesertBodyMaterial()
-    {
-#if UNITY_EDITOR
-        return AssetDatabase.LoadAssetAtPath<Material>(DesertBodyMaterialPath);
 #else
         return null;
 #endif
@@ -1182,11 +1245,12 @@ public static class TankiGameplayBootstrap
         title.fontSize = 30;
         title.color = Color.white;
 
-        Button normalButton = EnsureTankSelectionButton(panelRect, "Normal Tank Button", "Normal", new Vector2(-120f, 0f), new Color(0.12f, 0.52f, 0.18f, 1f));
-        Button desertButton = EnsureTankSelectionButton(panelRect, "Desert Tank Button", "Desert", new Vector2(120f, 0f), new Color(0.72f, 0.48f, 0.18f, 1f));
+        Button normalButton = EnsureTankSelectionButton(panelRect, "Normal Tank Button", "Normal", new Vector2(-190f, 0f), new Color(0.12f, 0.52f, 0.18f, 1f));
+        Button desertButton = EnsureTankSelectionButton(panelRect, "Desert Tank Button", "Desert", Vector2.zero, new Color(0.72f, 0.48f, 0.18f, 1f));
+        Button snowButton = EnsureTankSelectionButton(panelRect, "Snow Tank Button", "Snow", new Vector2(190f, 0f), new Color(0.72f, 0.88f, 0.92f, 1f));
 
         TankSelectionMenu menu = EnsureComponent<TankSelectionMenu>(parent.gameObject);
-        menu.Configure(tank, panelImage.gameObject, normalButton, desertButton);
+        menu.Configure(tank, panelImage.gameObject, normalButton, desertButton, snowButton);
     }
 
     private static Button EnsureTankSelectionButton(Transform parent, string objectName, string label, Vector2 position, Color color)
@@ -1417,6 +1481,8 @@ public static class TankiGameplayBootstrap
     }
 
     public static string TankAssetPath => TankPrefabPath;
+    public static string SnowTankAssetPath => TankSnowPrefabPath;
+    public static string EnemyTankAssetPath => TankEnemyPrefabPath;
     public static string MissileAssetPath => MissilePrefabPath;
     public static string BoxAssetPath => BoxPrefabPath;
 }

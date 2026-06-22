@@ -10,7 +10,51 @@ public static class TankSceneSetup
     private const string BoxPrefabPath = "Assets/Models/Box/Box.prefab";
     private const string ReadyBoxCreatedEditorPref = "TankiYandex.ReadyBoxCreated";
     private const string PhysicsBoxesReplacedEditorPref = "TankiYandex.PhysicsBoxesReplacedWithPrefab.v5";
+    private const string CurrentHierarchySavedEditorPref = "TankiYandex.CurrentHierarchySavedToBuild.v1";
+    private const string CurrentTankPrefabsAppliedEditorPref = "TankiYandex.CurrentTankPrefabsApplied.v1";
     private const float BoxGroundClearance = 0.3f;
+
+    [InitializeOnLoadMethod]
+    private static void AutoApplyCurrentTankPrefabsOnce()
+    {
+        EditorApplication.delayCall += () =>
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                return;
+            }
+
+            string projectKey = $"{CurrentTankPrefabsAppliedEditorPref}.{Application.dataPath}";
+            if (EditorPrefs.GetBool(projectKey, false))
+            {
+                return;
+            }
+
+            ApplyCurrentTankPrefabsToScene();
+            EditorPrefs.SetBool(projectKey, true);
+        };
+    }
+
+    [InitializeOnLoadMethod]
+    private static void AutoSaveCurrentHierarchyToBuildOnce()
+    {
+        EditorApplication.delayCall += () =>
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                return;
+            }
+
+            string projectKey = $"{CurrentHierarchySavedEditorPref}.{Application.dataPath}";
+            if (EditorPrefs.GetBool(projectKey, false))
+            {
+                return;
+            }
+
+            SaveCurrentHierarchyToBuildLevel();
+            EditorPrefs.SetBool(projectKey, true);
+        };
+    }
 
     [InitializeOnLoadMethod]
     private static void AutoCreateReadyBoxOnce()
@@ -102,6 +146,62 @@ public static class TankSceneSetup
         Selection.activeGameObject = tank;
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         Debug.Log("Basic tank scene setup is ready: WASD moves the hull, mouse aims the turret, LMB fires.");
+    }
+
+    [MenuItem("Tools/Tanki/Apply Current Tank Prefabs To Scene")]
+    public static void ApplyCurrentTankPrefabsToScene()
+    {
+        if (EditorSceneManager.GetActiveScene().path != SampleScenePath)
+        {
+            EditorSceneManager.OpenScene(SampleScenePath, OpenSceneMode.Single);
+        }
+
+        GameObject playerPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(TankiGameplayBootstrap.TankAssetPath);
+        GameObject enemyPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(TankiGameplayBootstrap.EnemyTankAssetPath);
+
+        if (playerPrefab == null)
+        {
+            Debug.LogError($"Player tank prefab was not found at {TankiGameplayBootstrap.TankAssetPath}");
+            return;
+        }
+
+        if (enemyPrefab == null)
+        {
+            Debug.LogError($"Enemy tank prefab was not found at {TankiGameplayBootstrap.EnemyTankAssetPath}");
+            return;
+        }
+
+        ReplaceScenePrefab("Tank", playerPrefab);
+        for (int i = 1; i <= 3; i++)
+        {
+            ReplaceScenePrefab($"Enemy Tank {i}", enemyPrefab);
+        }
+
+        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+        EditorSceneManager.SaveOpenScenes();
+        Debug.Log("Applied Tank Snow to the player and Tank Enemy to enemies in the scene.");
+    }
+
+    [MenuItem("Tools/Tanki/Save Current Hierarchy To Build Level")]
+    public static void SaveCurrentHierarchyToBuildLevel()
+    {
+        Scene activeScene = EditorSceneManager.GetActiveScene();
+        if (!activeScene.IsValid() || string.IsNullOrEmpty(activeScene.path))
+        {
+            Debug.LogWarning("Open and save a scene before saving the level hierarchy to the build.");
+            return;
+        }
+
+        EnsureSceneIsInBuildSettings(activeScene.path);
+
+        foreach (GameObject root in activeScene.GetRootGameObjects())
+        {
+            EditorUtility.SetDirty(root);
+        }
+
+        EditorSceneManager.MarkSceneDirty(activeScene);
+        EditorSceneManager.SaveOpenScenes();
+        Debug.Log($"Saved current hierarchy into {activeScene.path} and made sure it is included in Build Settings.");
     }
 
     [MenuItem("Tools/Tanki/Create Ready Box")]
@@ -453,5 +553,75 @@ public static class TankSceneSetup
         }
 
         return $"{baseName} {index}";
+    }
+
+    private static void EnsureSceneIsInBuildSettings(string scenePath)
+    {
+        EditorBuildSettingsScene[] scenes = EditorBuildSettings.scenes;
+        for (int i = 0; i < scenes.Length; i++)
+        {
+            if (scenes[i].path != scenePath)
+            {
+                continue;
+            }
+
+            if (!scenes[i].enabled)
+            {
+                scenes[i].enabled = true;
+                EditorBuildSettings.scenes = scenes;
+            }
+
+            return;
+        }
+
+        EditorBuildSettingsScene[] updatedScenes = new EditorBuildSettingsScene[scenes.Length + 1];
+        for (int i = 0; i < scenes.Length; i++)
+        {
+            updatedScenes[i] = scenes[i];
+        }
+
+        updatedScenes[updatedScenes.Length - 1] = new EditorBuildSettingsScene(scenePath, true);
+        EditorBuildSettings.scenes = updatedScenes;
+    }
+
+    private static GameObject ReplaceScenePrefab(string objectName, GameObject prefab)
+    {
+        if (prefab == null)
+        {
+            return null;
+        }
+
+        GameObject existing = GameObject.Find(objectName);
+        if (existing == null)
+        {
+            GameObject created = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            created.name = objectName;
+            Undo.RegisterCreatedObjectUndo(created, $"Create {objectName}");
+            EditorUtility.SetDirty(created);
+            return created;
+        }
+
+        if (PrefabUtility.GetCorrespondingObjectFromSource(existing) == prefab)
+        {
+            return existing;
+        }
+
+        Transform existingTransform = existing.transform;
+        Transform parent = existingTransform.parent;
+        int siblingIndex = existingTransform.GetSiblingIndex();
+        Vector3 position = existingTransform.position;
+        Quaternion rotation = existingTransform.rotation;
+        Vector3 scale = existingTransform.localScale;
+
+        Undo.DestroyObjectImmediate(existing);
+
+        GameObject replacement = (GameObject)PrefabUtility.InstantiatePrefab(prefab, parent);
+        replacement.name = objectName;
+        replacement.transform.SetSiblingIndex(siblingIndex);
+        replacement.transform.SetPositionAndRotation(position, rotation);
+        replacement.transform.localScale = scale;
+        Undo.RegisterCreatedObjectUndo(replacement, $"Replace {objectName}");
+        EditorUtility.SetDirty(replacement);
+        return replacement;
     }
 }

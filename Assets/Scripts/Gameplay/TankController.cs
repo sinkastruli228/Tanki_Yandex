@@ -21,6 +21,9 @@ public sealed class TankController : MonoBehaviour
     private Rigidbody body;
     private float planeY;
     private float currentSpeed;
+    private bool useExternalInput;
+    private float externalThrottle;
+    private float externalTurn;
 
     public Vector3 LocalForwardAxis => TankPlaneMath.SafeLocalForwardAxis(localForwardAxis);
     public Vector3 ForwardOnPlane => TankPlaneMath.Flatten(transform.TransformDirection(LocalForwardAxis));
@@ -48,6 +51,20 @@ public sealed class TankController : MonoBehaviour
     public void RefreshMovementPlane()
     {
         planeY = transform.position.y;
+    }
+
+    public void SetExternalInput(float throttle, float turn)
+    {
+        useExternalInput = true;
+        externalThrottle = Mathf.Clamp(throttle, -1f, 1f);
+        externalTurn = Mathf.Clamp(turn, -1f, 1f);
+    }
+
+    public void ClearExternalInput()
+    {
+        useExternalInput = false;
+        externalThrottle = 0f;
+        externalTurn = 0f;
     }
 
     private void Awake()
@@ -285,8 +302,13 @@ public sealed class TankController : MonoBehaviour
         body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
     }
 
-    private static float ReadThrottle()
+    private float ReadThrottle()
     {
+        if (useExternalInput)
+        {
+            return externalThrottle;
+        }
+
         Keyboard keyboard = Keyboard.current;
         if (keyboard == null)
         {
@@ -307,8 +329,13 @@ public sealed class TankController : MonoBehaviour
         return Mathf.Clamp(throttle, -1f, 1f);
     }
 
-    private static float ReadTurn()
+    private float ReadTurn()
     {
+        if (useExternalInput)
+        {
+            return externalTurn;
+        }
+
         Keyboard keyboard = Keyboard.current;
         if (keyboard == null)
         {
