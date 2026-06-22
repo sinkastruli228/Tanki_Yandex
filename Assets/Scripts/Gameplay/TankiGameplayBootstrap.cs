@@ -13,6 +13,8 @@ public static class TankiGameplayBootstrap
     private const string TankPrefabPath = "Assets/Models/Tank/Tank.prefab";
     private const string MissilePrefabPath = "Assets/Models/Missle/Missile.prefab";
     private const string BoxPrefabPath = "Assets/Models/Box/Box.prefab";
+    private const string ScopeSpritePath = "Assets/UI/Scope.png";
+    private const string HitMarkerSpritePath = "Assets/UI/Hit_Marker.png";
     private const float GroundY = 0f;
     private const float FloorSize = 960f;
     private const float FloorTileSize = 8f;
@@ -900,9 +902,11 @@ public static class TankiGameplayBootstrap
 
         GameObject gameOverPanel = EnsureGameOverPanel(root.transform);
         Button restartButton = EnsureRestartButton(gameOverPanel.transform);
+        Image gameplayCursor = EnsureGameplayCursor(root.transform);
+        EnsureHitMarker(root.transform, canvas);
 
         PlayerHealthBar healthBar = EnsureComponent<PlayerHealthBar>(root);
-        healthBar.Configure(playerHealth, fillImage, gameOverPanel, restartButton);
+        healthBar.Configure(playerHealth, fillImage, gameOverPanel, restartButton, gameplayCursor);
         return root;
     }
 
@@ -955,6 +959,47 @@ public static class TankiGameplayBootstrap
         return panelImage.gameObject;
     }
 
+    private static Image EnsureGameplayCursor(Transform parent)
+    {
+        RectTransform cursorRect;
+        Image cursorImage = GetOrCreateImage(parent, "Gameplay Cursor", out cursorRect);
+        cursorRect.anchorMin = new Vector2(0.5f, 0.5f);
+        cursorRect.anchorMax = new Vector2(0.5f, 0.5f);
+        cursorRect.pivot = new Vector2(0.5f, 0.5f);
+        cursorRect.anchoredPosition = Vector2.zero;
+        cursorRect.sizeDelta = new Vector2(56f, 56f);
+
+        cursorImage.sprite = LoadUiSprite(ScopeSpritePath);
+        cursorImage.type = Image.Type.Simple;
+        cursorImage.preserveAspect = true;
+        cursorImage.color = Color.white;
+        cursorImage.raycastTarget = false;
+        return cursorImage;
+    }
+
+    private static Image EnsureHitMarker(Transform parent, Canvas canvas)
+    {
+        RectTransform markerRect;
+        Image markerImage = GetOrCreateImage(parent, "Hit Marker", out markerRect);
+        markerRect.anchorMin = new Vector2(0.5f, 0.5f);
+        markerRect.anchorMax = new Vector2(0.5f, 0.5f);
+        markerRect.pivot = new Vector2(0.5f, 0.5f);
+        markerRect.anchoredPosition = Vector2.zero;
+        markerRect.sizeDelta = new Vector2(24f, 24f);
+        markerRect.localScale = Vector3.one;
+
+        markerImage.sprite = LoadUiSprite(HitMarkerSpritePath);
+        markerImage.type = Image.Type.Simple;
+        markerImage.preserveAspect = true;
+        markerImage.color = Color.white;
+        markerImage.raycastTarget = false;
+        markerImage.gameObject.SetActive(false);
+
+        HitMarkerDisplay markerDisplay = EnsureComponent<HitMarkerDisplay>(parent.gameObject);
+        markerDisplay.Configure(markerImage, canvas);
+        return markerImage;
+    }
+
     private static Button EnsureRestartButton(Transform parent)
     {
         RectTransform buttonRect;
@@ -992,6 +1037,24 @@ public static class TankiGameplayBootstrap
         buttonText.color = Color.white;
 
         return button;
+    }
+
+    private static Sprite LoadUiSprite(string assetPath)
+    {
+#if UNITY_EDITOR
+        Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
+        if (sprite != null)
+        {
+            return sprite;
+        }
+
+        Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+        if (texture != null)
+        {
+            return Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
+        }
+#endif
+        return null;
     }
 
     private static Image GetOrCreateImage(Transform parent, string objectName, out RectTransform rectTransform)

@@ -4,6 +4,8 @@ using UnityEngine.Rendering;
 [DisallowMultipleComponent]
 public sealed class ProjectileMovement : MonoBehaviour
 {
+    public static event System.Action<Vector3> Impacted;
+
     [SerializeField] private Vector3 localForwardAxis = Vector3.forward;
     [SerializeField] private float speed = 18f;
     [SerializeField] private float lifetime = 4f;
@@ -254,6 +256,7 @@ public sealed class ProjectileMovement : MonoBehaviour
 
     private void ExplodeAndDestroy(Vector3 position)
     {
+        Impacted?.Invoke(position);
         ImpactExplosion.Spawn(position);
         ReleaseTrail();
         Destroy(gameObject);

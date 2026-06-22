@@ -11,21 +11,26 @@ public sealed class PlayerHealthBar : MonoBehaviour
     [SerializeField] private RectTransform fillRect;
     [SerializeField] private GameObject gameOverPanel;
     [SerializeField] private Button restartButton;
+    [SerializeField] private Image gameplayCursorImage;
+    [SerializeField] private RectTransform gameplayCursorRect;
 
     private bool gameOverShown;
 
-    public void Configure(TankHealth playerHealth, Image healthFill, GameObject gameOverRoot, Button restart)
+    public void Configure(TankHealth playerHealth, Image healthFill, GameObject gameOverRoot, Button restart, Image cursorImage)
     {
         target = playerHealth;
         fillImage = healthFill;
         fillRect = healthFill != null ? healthFill.rectTransform : null;
         gameOverPanel = gameOverRoot;
         restartButton = restart;
+        gameplayCursorImage = cursorImage;
+        gameplayCursorRect = cursorImage != null ? cursorImage.rectTransform : null;
         gameOverShown = false;
 
         Time.timeScale = 1f;
         SetPlayerControlEnabled(true);
         SetCameraFrozen(false);
+        SetGameplayCursorActive(true);
 
         if (restartButton != null)
         {
@@ -39,6 +44,7 @@ public sealed class PlayerHealthBar : MonoBehaviour
     private void Update()
     {
         UpdateVisual();
+        UpdateGameplayCursor();
         TryHandleRestartClickFallback();
     }
 
@@ -73,8 +79,46 @@ public sealed class PlayerHealthBar : MonoBehaviour
         SetPlayerControlEnabled(false);
         SetCameraFrozen(true);
         Time.timeScale = 0f;
-        Cursor.visible = true;
+        SetGameplayCursorActive(false);
+    }
+
+    private void SetGameplayCursorActive(bool isActive)
+    {
+        bool showGameplayCursor = isActive && Application.isPlaying;
+        if (gameplayCursorImage != null)
+        {
+            gameplayCursorImage.gameObject.SetActive(showGameplayCursor);
+            gameplayCursorImage.raycastTarget = false;
+        }
+
+        if (Application.isPlaying)
+        {
+            Cursor.visible = !isActive;
+            Cursor.lockState = CursorLockMode.None;
+        }
+    }
+
+    private void UpdateGameplayCursor()
+    {
+        if (!Application.isPlaying || gameplayCursorRect == null || Mouse.current == null)
+        {
+            return;
+        }
+
+        bool isActive = !gameOverShown && target != null && target.IsAlive;
+        if (gameplayCursorImage != null && gameplayCursorImage.gameObject.activeSelf != isActive)
+        {
+            gameplayCursorImage.gameObject.SetActive(isActive);
+        }
+
+        if (!isActive)
+        {
+            return;
+        }
+
+        Cursor.visible = false;
         Cursor.lockState = CursorLockMode.None;
+        gameplayCursorRect.position = Mouse.current.position.ReadValue();
     }
 
     private void SetPlayerControlEnabled(bool isEnabled)
