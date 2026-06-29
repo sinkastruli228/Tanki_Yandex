@@ -31,14 +31,25 @@ public static class ImpactExplosion
 
     public static void Spawn(Vector3 position)
     {
+        Spawn(position, 1f, false);
+    }
+
+    public static void SpawnTankDeath(Vector3 position)
+    {
+        Spawn(position, 1.85f, true);
+    }
+
+    private static void Spawn(Vector3 position, float scale, bool spawnTankSmoke)
+    {
         GameObject explosion = new GameObject("Stylized Impact Explosion");
         explosion.transform.position = position;
+        explosion.transform.localScale = Vector3.one * scale;
 
         PushRigidbodies(position);
         PlayExplosionAudio(explosion.transform);
         SpawnFlashLight(explosion.transform);
         CreateShockwave(explosion.transform);
-        CreateTracerSparks(explosion.transform);
+        CreateTracerSparks(explosion.transform, spawnTankSmoke ? 1.75f : 1f);
         if (ActiveStyle == ExplosionStyle.Volumetric)
         {
             SpawnVolumetricExplosion(explosion.transform);
@@ -48,7 +59,12 @@ public static class ImpactExplosion
             SpawnBillboardExplosion(explosion.transform);
         }
 
-        Object.Destroy(explosion, 1.4f);
+        if (spawnTankSmoke)
+        {
+            CreateTankDeathSmoke(explosion.transform);
+        }
+
+        Object.Destroy(explosion, spawnTankSmoke ? 3.6f : 1.4f);
     }
 
     private static void PlayExplosionAudio(Transform parent)
@@ -136,7 +152,7 @@ public static class ImpactExplosion
         pulse.Configure(renderer, 0.34f, 5.2f, new Color(1f, 0.82f, 0.3f, 0.34f));
     }
 
-    private static void CreateTracerSparks(Transform parent)
+    private static void CreateTracerSparks(Transform parent, float lifetimeMultiplier)
     {
         const int sparkCount = 30;
         for (int i = 0; i < sparkCount; i++)
@@ -151,7 +167,7 @@ public static class ImpactExplosion
             direction.Normalize();
 
             float speed = Random.Range(28f, 48f);
-            float lifetime = Random.Range(0.48f, 0.72f);
+            float lifetime = Random.Range(0.48f, 0.72f) * lifetimeMultiplier;
             float width = Random.Range(0.24f, 0.4f);
 
             GameObject spark = new GameObject("Explosion Trail Spark");
@@ -159,7 +175,7 @@ public static class ImpactExplosion
             spark.transform.localPosition = Vector3.up * Random.Range(0.75f, 1.35f) + direction * Random.Range(0.12f, 0.55f);
 
             TrailRenderer trail = spark.AddComponent<TrailRenderer>();
-            trail.time = Random.Range(0.52f, 0.82f);
+            trail.time = Random.Range(0.52f, 0.82f) * lifetimeMultiplier;
             trail.startWidth = width;
             trail.endWidth = 0f;
             trail.minVertexDistance = 0.03f;
@@ -176,6 +192,76 @@ public static class ImpactExplosion
             TrailSpark sparkMotion = spark.AddComponent<TrailSpark>();
             sparkMotion.Configure(direction * speed, lifetime, trail);
         }
+    }
+
+    private static void CreateTankDeathSmoke(Transform parent)
+    {
+        ParticleSystem smoke = new GameObject("Tank Death Center Smoke").AddComponent<ParticleSystem>();
+        smoke.transform.SetParent(parent, false);
+        smoke.transform.localPosition = Vector3.up * 0.25f;
+        smoke.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+        ParticleSystem.MainModule main = smoke.main;
+        main.playOnAwake = false;
+        main.duration = 0.85f;
+        main.loop = false;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(2.0f, 3.2f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(1.0f, 2.6f);
+        main.startSize = new ParticleSystem.MinMaxCurve(3.6f, 6.8f);
+        main.startColor = new ParticleSystem.MinMaxGradient(
+            new Color(0.22f, 0.19f, 0.16f, 0.58f),
+            new Color(0.08f, 0.075f, 0.07f, 0.72f));
+        main.gravityModifier = -0.02f;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.stopAction = ParticleSystemStopAction.None;
+
+        ParticleSystem.EmissionModule emission = smoke.emission;
+        emission.rateOverTime = 0f;
+
+        ParticleSystem.ShapeModule shape = smoke.shape;
+        shape.shapeType = ParticleSystemShapeType.Sphere;
+        shape.radius = 1.35f;
+        shape.position = Vector3.up * 0.6f;
+
+        ParticleSystem.VelocityOverLifetimeModule velocity = smoke.velocityOverLifetime;
+        velocity.enabled = true;
+        velocity.space = ParticleSystemSimulationSpace.Local;
+        velocity.y = new ParticleSystem.MinMaxCurve(0.6f, 1.8f);
+        velocity.x = new ParticleSystem.MinMaxCurve(-0.45f, 0.45f);
+        velocity.z = new ParticleSystem.MinMaxCurve(-0.45f, 0.45f);
+
+        ParticleSystem.ColorOverLifetimeModule colorOverLifetime = smoke.colorOverLifetime;
+        colorOverLifetime.enabled = true;
+        Gradient gradient = new Gradient();
+        gradient.SetKeys(
+            new[]
+            {
+                new GradientColorKey(new Color(0.28f, 0.23f, 0.19f), 0f),
+                new GradientColorKey(new Color(0.11f, 0.1f, 0.09f), 1f)
+            },
+            new[]
+            {
+                new GradientAlphaKey(0f, 0f),
+                new GradientAlphaKey(0.7f, 0.16f),
+                new GradientAlphaKey(0.48f, 0.58f),
+                new GradientAlphaKey(0f, 1f)
+            });
+        colorOverLifetime.color = gradient;
+
+        ParticleSystem.SizeOverLifetimeModule sizeOverLifetime = smoke.sizeOverLifetime;
+        sizeOverLifetime.enabled = true;
+        sizeOverLifetime.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(
+            new Keyframe(0f, 0.45f),
+            new Keyframe(0.35f, 1.35f),
+            new Keyframe(1f, 1.85f)));
+
+        ParticleSystemRenderer renderer = smoke.GetComponent<ParticleSystemRenderer>();
+        renderer.renderMode = ParticleSystemRenderMode.Billboard;
+        renderer.material = GetBlobMaterial();
+        renderer.sortingFudge = -2f;
+
+        smoke.Emit(28);
+        smoke.Play();
     }
 
     private static void CreateVolumetricBlob(Transform parent, Vector3 offset, Vector3 travelDirection, float size, float delay, float lifetime)
@@ -470,6 +556,11 @@ public static class ImpactExplosion
         {
             Rigidbody body = collider.attachedRigidbody;
             if (body == null || body.isKinematic)
+            {
+                continue;
+            }
+
+            if (body.GetComponent<TurretDebris>() != null || body.GetComponentInParent<TurretDebris>() != null)
             {
                 continue;
             }

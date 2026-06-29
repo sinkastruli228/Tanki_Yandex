@@ -5,6 +5,7 @@ using UnityEngine.Rendering;
 public sealed class ProjectileMovement : MonoBehaviour
 {
     public static event System.Action<Vector3> Impacted;
+    public static event System.Action<Vector3> DamagedTank;
 
     [SerializeField] private Vector3 localForwardAxis = Vector3.forward;
     [SerializeField] private float speed = 18f;
@@ -88,7 +89,7 @@ public sealed class ProjectileMovement : MonoBehaviour
             return;
         }
 
-        if (TryApplyDamage(collision.collider) || destroyOnCollision)
+        if (TryApplyDamage(collision.collider, collision.GetContact(0).point) || destroyOnCollision)
         {
             ExplodeAndDestroy(collision.GetContact(0).point);
         }
@@ -101,13 +102,13 @@ public sealed class ProjectileMovement : MonoBehaviour
             return;
         }
 
-        if (TryApplyDamage(other) || destroyOnCollision)
+        if (TryApplyDamage(other, transform.position) || destroyOnCollision)
         {
             ExplodeAndDestroy(transform.position);
         }
     }
 
-    private bool TryApplyDamage(Collider other)
+    private bool TryApplyDamage(Collider other, Vector3 hitPoint)
     {
         TankHealth health = other.GetComponentInParent<TankHealth>();
         if (health == null || !health.IsAlive)
@@ -126,6 +127,7 @@ public sealed class ProjectileMovement : MonoBehaviour
         }
 
         health.TakeDamage(damage);
+        DamagedTank?.Invoke(hitPoint);
         return true;
     }
 
@@ -166,6 +168,7 @@ public sealed class ProjectileMovement : MonoBehaviour
                 }
 
                 health.TakeDamage(damage);
+                DamagedTank?.Invoke(hit.point.sqrMagnitude > 0.001f ? hit.point : end);
             }
 
             hitPoint = hit.point.sqrMagnitude > 0.001f ? hit.point : end;
@@ -209,6 +212,7 @@ public sealed class ProjectileMovement : MonoBehaviour
                 }
 
                 health.TakeDamage(damage);
+                DamagedTank?.Invoke(GetClosestHitPoint(hitCollider, start, end));
             }
 
             hitPoint = GetClosestHitPoint(hitCollider, start, end);

@@ -180,6 +180,11 @@ public sealed class TankController : MonoBehaviour
 
             foreach (Collider overlap in overlaps)
             {
+                if (IsOtherTankCollider(overlap))
+                {
+                    continue;
+                }
+
                 if (ShouldIgnoreMovementHit(overlap))
                 {
                     continue;
@@ -221,17 +226,28 @@ public sealed class TankController : MonoBehaviour
         }
 
         Rigidbody hitBody = hitCollider.attachedRigidbody;
+        if (IsOtherTankCollider(hitCollider))
+        {
+            return false;
+        }
+
         if (hitBody != null && !hitBody.isKinematic)
         {
             return true;
         }
 
-        if (!IsStaticWallCollider(hitCollider))
+        if (!IsStaticObstacleCollider(hitCollider))
         {
             return true;
         }
 
         return false;
+    }
+
+    private bool IsOtherTankCollider(Collider hitCollider)
+    {
+        TankHealth hitTank = hitCollider != null ? hitCollider.GetComponentInParent<TankHealth>() : null;
+        return hitTank != null && !hitTank.transform.IsChildOf(transform);
     }
 
     private void PushDynamicBodies(Vector3 movement)
@@ -268,7 +284,7 @@ public sealed class TankController : MonoBehaviour
         }
     }
 
-    private static bool IsStaticWallCollider(Collider hitCollider)
+    private static bool IsStaticObstacleCollider(Collider hitCollider)
     {
         Transform current = hitCollider.transform;
         while (current != null)
@@ -276,7 +292,11 @@ public sealed class TankController : MonoBehaviour
             string objectName = current.name;
             if (objectName.Contains("wall", System.StringComparison.OrdinalIgnoreCase)
                 || objectName.Contains("stolb", System.StringComparison.OrdinalIgnoreCase)
-                || objectName.Contains("walls", System.StringComparison.OrdinalIgnoreCase))
+                || objectName.Contains("walls", System.StringComparison.OrdinalIgnoreCase)
+                || objectName.Contains("rock", System.StringComparison.OrdinalIgnoreCase)
+                || objectName.Contains("stone", System.StringComparison.OrdinalIgnoreCase)
+                || objectName.Contains("kamen", System.StringComparison.OrdinalIgnoreCase)
+                || objectName.Contains("кам", System.StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }

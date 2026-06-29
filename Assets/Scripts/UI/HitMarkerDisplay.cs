@@ -31,12 +31,12 @@ public sealed class HitMarkerDisplay : MonoBehaviour
 
     private void OnEnable()
     {
-        ProjectileMovement.Impacted += ShowAtWorldPoint;
+        ProjectileMovement.DamagedTank += ShowAtWorldPoint;
     }
 
     private void OnDisable()
     {
-        ProjectileMovement.Impacted -= ShowAtWorldPoint;
+        ProjectileMovement.DamagedTank -= ShowAtWorldPoint;
     }
 
     private void Update()

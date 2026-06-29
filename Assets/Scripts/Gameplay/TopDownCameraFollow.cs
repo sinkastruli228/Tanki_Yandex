@@ -5,9 +5,9 @@ using UnityEngine.InputSystem;
 public sealed class TopDownCameraFollow : MonoBehaviour
 {
     public static readonly Vector3 DefaultOffset = new Vector3(0f, 39f, -48f);
-    public static readonly Vector3 DefaultLookOffset = new Vector3(0f, 0.2f, 9f);
+    public static readonly Vector3 DefaultLookOffset = new Vector3(0f, 0.2f, 18f);
     public static readonly Vector3 DefaultCloseOffset = new Vector3(0f, 10f, -14f);
-    public static readonly Vector3 DefaultCloseLookOffset = new Vector3(0f, 1.25f, 4f);
+    public static readonly Vector3 DefaultCloseLookOffset = new Vector3(0f, 1.25f, 7f);
 
     [SerializeField] private Transform target;
     [SerializeField] private Vector3 offset = new Vector3(0f, 39f, -48f);
@@ -23,15 +23,19 @@ public sealed class TopDownCameraFollow : MonoBehaviour
     [SerializeField] private float closeCameraShakeMultiplier = 0.333f;
     [SerializeField] private float shakeFrequency = 36f;
     [SerializeField] private float shakeDecay = 4.5f;
+    [SerializeField] private float explosionShakeDecayMultiplier = 0.32f;
 
     private Vector3 velocity;
     private TankShooter shakeShooter;
     private TankHealth shakeHealth;
     private float shakePower;
+    private float activeShakeDecayMultiplier = 1f;
     private float shakeSeed;
     private float orbitYaw;
     private bool closeCameraActive;
     private bool isFrozen;
+    private Vector3 frozenPosition;
+    private Quaternion frozenRotation;
 
     public void Configure(Transform followTarget)
     {
@@ -69,10 +73,35 @@ public sealed class TopDownCameraFollow : MonoBehaviour
     {
         isFrozen = frozen;
         velocity = Vector3.zero;
-
         if (isFrozen)
         {
-            shakePower = 0f;
+            frozenPosition = transform.position;
+            frozenRotation = transform.rotation;
+        }
+    }
+
+    public void AddExplosionShake(float intensity)
+    {
+        AddShake(intensity, true, explosionShakeDecayMultiplier);
+    }
+
+    public static void ShakeAllExplosions(float intensity)
+    {
+        TopDownCameraFollow[] cameras = FindObjectsByType<TopDownCameraFollow>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (TopDownCameraFollow cameraFollow in cameras)
+        {
+            cameraFollow.AddExplosionShake(intensity);
+        }
+
+        if (cameras.Length > 0 || Camera.main == null)
+        {
+            return;
+        }
+
+        TopDownCameraFollow mainCameraFollow = Camera.main.GetComponent<TopDownCameraFollow>();
+        if (mainCameraFollow != null)
+        {
+            mainCameraFollow.AddExplosionShake(intensity);
         }
     }
 
@@ -94,8 +123,16 @@ public sealed class TopDownCameraFollow : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (target == null || isFrozen)
+        if (target == null)
         {
+            return;
+        }
+
+        if (isFrozen)
+        {
+            transform.position = frozenPosition;
+            transform.rotation = frozenRotation;
+            ApplyShake();
             return;
         }
 
@@ -120,6 +157,7 @@ public sealed class TopDownCameraFollow : MonoBehaviour
         closeCameraShakeMultiplier = Mathf.Max(0f, closeCameraShakeMultiplier);
         shakeFrequency = Mathf.Max(0.01f, shakeFrequency);
         shakeDecay = Mathf.Max(0.01f, shakeDecay);
+        explosionShakeDecayMultiplier = Mathf.Max(0.01f, explosionShakeDecayMultiplier);
     }
 
     private void SnapToTarget()
@@ -185,19 +223,24 @@ public sealed class TopDownCameraFollow : MonoBehaviour
 
     private void AddShotShake()
     {
-        AddShake(shotShakeIntensity);
+        AddShake(shotShakeIntensity, false, 1f);
     }
 
     private void AddHitShake(TankHealth health, int damage)
     {
-        AddShake(hitShakeIntensity);
+        AddShake(hitShakeIntensity, false, 1f);
     }
 
-    private void AddShake(float intensity)
+    private void AddShake(float intensity, bool ignoreFrozen, float decayMultiplier)
     {
-        if (isFrozen)
+        if (isFrozen && !ignoreFrozen)
         {
             return;
+        }
+
+        if (intensity >= shakePower)
+        {
+            activeShakeDecayMultiplier = Mathf.Max(0.01f, decayMultiplier);
         }
 
         shakePower = Mathf.Max(shakePower, intensity);
@@ -228,7 +271,7 @@ public sealed class TopDownCameraFollow : MonoBehaviour
             return;
         }
 
-        float time = Time.time * shakeFrequency + shakeSeed;
+        float time = Time.unscaledTime * shakeFrequency + shakeSeed;
         float activeShakePower = closeCameraActive ? shakePower * closeCameraShakeMultiplier : shakePower;
         Vector3 shakeOffset = new Vector3(
             Mathf.PerlinNoise(time, 0.13f) - 0.5f,
@@ -239,6 +282,10 @@ public sealed class TopDownCameraFollow : MonoBehaviour
 
         float roll = (Mathf.PerlinNoise(time * 1.31f, 0.71f) - 0.5f) * activeShakePower * 0.7f;
         transform.rotation *= Quaternion.Euler(0f, 0f, roll);
-        shakePower = Mathf.MoveTowards(shakePower, 0f, shakeDecay * Time.deltaTime);
+        shakePower = Mathf.MoveTowards(shakePower, 0f, shakeDecay * activeShakeDecayMultiplier * Time.unscaledDeltaTime);
+        if (shakePower <= 0.001f)
+        {
+            activeShakeDecayMultiplier = 1f;
+        }
     }
 }

@@ -27,7 +27,7 @@ public sealed class StaticEnemyTank : MonoBehaviour
     [SerializeField] private float obstacleSlowdown = 0.18f;
     [SerializeField] private float blockedThrottle = 0.12f;
     [SerializeField] private float lineOfFireRadius = 0.35f;
-    [SerializeField] private float fireCooldown = 1.35f;
+    [SerializeField] private float fireCooldown = 2.5f;
     [SerializeField] private float projectileSpeed = 108f;
     [SerializeField] private int damage = 25;
     [SerializeField] private AudioClip shotClip;
@@ -48,6 +48,8 @@ public sealed class StaticEnemyTank : MonoBehaviour
         float newProjectileSpeed,
         int newDamage,
         float newFireRange,
+        float newDetectionRange,
+        float newFireCooldown,
         Vector3 forwardAxis)
     {
         target = playerTarget;
@@ -57,7 +59,8 @@ public sealed class StaticEnemyTank : MonoBehaviour
         projectileSpeed = Mathf.Max(0f, newProjectileSpeed);
         damage = Mathf.Max(0, newDamage);
         fireRange = Mathf.Max(0f, newFireRange);
-        detectionRange = Mathf.Max(detectionRange, fireRange);
+        detectionRange = Mathf.Max(fireRange, newDetectionRange);
+        fireCooldown = Mathf.Max(0.01f, newFireCooldown);
         preferredDistance = Mathf.Clamp(preferredDistance, stopDistance, detectionRange);
         localForwardAxis = TankPlaneMath.SafeLocalForwardAxis(forwardAxis);
         projectileForwardAxis = TankPlaneMath.SafeLocalForwardAxis(forwardAxis);

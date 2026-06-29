@@ -19,6 +19,7 @@ public static class TankiGameplayBootstrap
     private const string BoxPrefabPath = "Assets/Models/Box/Box.prefab";
     private const string ScopeSpritePath = "Assets/UI/Scope.png";
     private const string HitMarkerSpritePath = "Assets/UI/Hit_Marker.png";
+    private const string EnemyMarkerSpritePath = "Assets/UI/Enemy Marker.png";
     private const string AmbientClipPath = "Assets/Sounds/Ambient.mp3";
     private const string MovementClipPath = "Assets/Sounds/Movement.mp3";
     private const string MusicAmbientClipPath = "Assets/Sounds/Music_Ambient.mp3";
@@ -32,8 +33,11 @@ public static class TankiGameplayBootstrap
     private const float TankReverseSpeed = 16.8f;
     private const float TankAcceleration = 86.4f;
     private const float ProjectileSpeed = 140.4f;
+    private const float PlayerShotCooldown = 1f;
     private const float MuzzleHeightOffset = 1.425f;
-    private const float EnemyAttackRange = 85f;
+    private const float EnemyAttackRange = 170f;
+    private const float EnemyDetectionRange = 202.5f;
+    private const float EnemyShotCooldown = 2.5f;
     private const float PhysicsBoxGroundClearance = 0.3f;
     private const int TankMaxHealth = 100;
     private const int ProjectileDamage = 25;
@@ -126,6 +130,9 @@ public static class TankiGameplayBootstrap
         Transform turret = FindChildRecursive(tank.transform, "Cylinder.002") ?? FindChildRecursive(tank.transform, "cylinder.002");
         turret = turret != null ? turret : tank.transform;
 
+        TankDeathEffect playerDeathEffect = EnsureComponent<TankDeathEffect>(tank);
+        playerDeathEffect.Configure(playerHealth, turret, false);
+
         TankTurretAim turretAim = EnsureComponent<TankTurretAim>(tank);
         turretAim.enabled = true;
         turretAim.Configure(turret, camera);
@@ -144,6 +151,7 @@ public static class TankiGameplayBootstrap
         shooter.enabled = true;
         shooter.Configure(turret, missilePrefab, muzzlePoint);
         shooter.ConfigureProjectileSpeed(ProjectileSpeed);
+        shooter.ConfigureShotCooldown(PlayerShotCooldown);
         shooter.ConfigureDamage(TankTeam.Player, ProjectileDamage);
 
         TankAudioController tankAudio = EnsureComponent<TankAudioController>(tank);
@@ -171,9 +179,10 @@ public static class TankiGameplayBootstrap
         EnsureSceneAudio();
         ImpactExplosion.ConfigureAudio(LoadRicochetClip(), LoadExplosionClip());
         EnsurePhysicsBoxes(persistent);
-        EnsureEnemies(missilePrefab, playerHealth, persistent);
         GameObject playerUi = EnsurePlayerHealthBar(playerHealth);
         EnsureTankSelectionMenu(tank, playerUi.transform);
+        EnemyWaveAnnouncement waveAnnouncement = EnsureWaveAnnouncement(playerUi.transform);
+        EnsureEnemyWaves(missilePrefab, playerHealth, waveAnnouncement, persistent);
 
         if (persistent)
         {
@@ -439,6 +448,31 @@ public static class TankiGameplayBootstrap
         return groundY;
     }
 
+    private static void EnsureEnemyWaves(GameObject missilePrefab, TankHealth playerHealth, EnemyWaveAnnouncement waveAnnouncement, bool persistent)
+    {
+        GameObject tankPrefab = LoadEnemyTankPrefab();
+        if (tankPrefab == null || missilePrefab == null || playerHealth == null)
+        {
+            return;
+        }
+
+        GameObject spawnerObject = GameObject.Find("Enemy Wave Spawner");
+        if (spawnerObject == null)
+        {
+            spawnerObject = new GameObject("Enemy Wave Spawner");
+        }
+
+        EnemyWaveSpawner spawner = EnsureComponent<EnemyWaveSpawner>(spawnerObject);
+        spawner.Configure(playerHealth, tankPrefab, missilePrefab, waveAnnouncement);
+
+#if UNITY_EDITOR
+        if (persistent)
+        {
+            EditorUtility.SetDirty(spawnerObject);
+        }
+#endif
+    }
+
     private static void EnsureEnemies(GameObject missilePrefab, TankHealth playerHealth, bool persistent)
     {
         GameObject tankPrefab = LoadEnemyTankPrefab();
@@ -486,7 +520,7 @@ public static class TankiGameplayBootstrap
         }
     }
 
-    private static void ConfigureEnemy(GameObject enemy, GameObject missilePrefab, TankHealth playerHealth)
+    public static void ConfigureEnemy(GameObject enemy, GameObject missilePrefab, TankHealth playerHealth)
     {
         TankController controller = enemy.GetComponent<TankController>();
         if (controller == null)
@@ -499,7 +533,6 @@ public static class TankiGameplayBootstrap
             controller.enabled = true;
             controller.ConfigureModelAxis(DefaultForwardAxis);
             controller.ConfigureMovement(TankForwardSpeed * 0.72f, TankReverseSpeed * 0.55f, TankAcceleration * 0.8f);
-            controller.RefreshMovementPlane();
             controller.SetExternalInput(0f, 0f);
         }
 
@@ -522,14 +555,22 @@ public static class TankiGameplayBootstrap
         body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
 
         AlignTankBottomToGround(enemy, body, GetGroundY(enemy.transform.position));
+        if (controller != null)
+        {
+            controller.RefreshMovementPlane();
+        }
+
         EnsureSingleBodyMeshCollider(enemy);
         ConfigureShadowCasters(enemy);
 
         TankHealth enemyHealth = EnsureComponent<TankHealth>(enemy);
-        enemyHealth.Configure(TankTeam.Enemy, TankMaxHealth, true);
+        enemyHealth.Configure(TankTeam.Enemy, TankMaxHealth, false);
 
         Transform turret = FindChildRecursive(enemy.transform, "Cylinder.002") ?? FindChildRecursive(enemy.transform, "cylinder.002");
         turret = turret != null ? turret : enemy.transform;
+
+        TankDeathEffect deathEffect = EnsureComponent<TankDeathEffect>(enemy);
+        deathEffect.Configure(enemyHealth, turret, true);
 
         Transform muzzlePoint = FindChildRecursive(turret, "MuzzlePoint");
         if (muzzlePoint == null)
@@ -542,7 +583,7 @@ public static class TankiGameplayBootstrap
         }
 
         StaticEnemyTank enemyTank = EnsureComponent<StaticEnemyTank>(enemy);
-        enemyTank.Configure(playerHealth, turret, muzzlePoint, missilePrefab, ProjectileSpeed, ProjectileDamage, EnemyAttackRange, DefaultForwardAxis);
+        enemyTank.Configure(playerHealth, turret, muzzlePoint, missilePrefab, ProjectileSpeed, ProjectileDamage, EnemyAttackRange, EnemyDetectionRange, EnemyShotCooldown, DefaultForwardAxis);
         enemyTank.ConfigureShotAudio(LoadShotClip());
         MuzzleShotEffect muzzleEffect = EnsureComponent<MuzzleShotEffect>(enemy);
         muzzleEffect.Configure(muzzlePoint, DefaultForwardAxis);
@@ -670,7 +711,7 @@ public static class TankiGameplayBootstrap
         return Object.FindFirstObjectByType<Terrain>();
     }
 
-    private static float GetGroundY(Vector3 position)
+    public static float GetGroundY(Vector3 position)
     {
         Terrain terrain = GetActiveTerrain();
         if (terrain == null || terrain.terrainData == null)
@@ -1209,9 +1250,13 @@ public static class TankiGameplayBootstrap
         Button restartButton = EnsureRestartButton(gameOverPanel.transform);
         Image gameplayCursor = EnsureGameplayCursor(root.transform);
         EnsureHitMarker(root.transform, canvas);
+        EnsureEnemyMarkers(root.transform, canvas);
+        Image damageVignette = EnsureDamageVignette(root.transform);
 
         PlayerHealthBar healthBar = EnsureComponent<PlayerHealthBar>(root);
         healthBar.Configure(playerHealth, fillImage, gameOverPanel, restartButton, gameplayCursor);
+        PlayerDamageVignette vignette = EnsureComponent<PlayerDamageVignette>(root);
+        vignette.Configure(playerHealth, damageVignette);
         return root;
     }
 
@@ -1345,6 +1390,25 @@ public static class TankiGameplayBootstrap
         cursorImage.preserveAspect = true;
         cursorImage.color = Color.white;
         cursorImage.raycastTarget = false;
+
+        RectTransform reloadRect;
+        Image reloadImage = GetOrCreateImage(cursorRect, "Reload Fill", out reloadRect);
+        reloadRect.anchorMin = Vector2.zero;
+        reloadRect.anchorMax = Vector2.one;
+        reloadRect.pivot = new Vector2(0.5f, 0.5f);
+        reloadRect.anchoredPosition = Vector2.zero;
+        reloadRect.offsetMin = Vector2.zero;
+        reloadRect.offsetMax = Vector2.zero;
+        reloadImage.sprite = cursorImage.sprite;
+        reloadImage.type = Image.Type.Filled;
+        reloadImage.fillMethod = Image.FillMethod.Radial360;
+        reloadImage.fillOrigin = (int)Image.Origin360.Top;
+        reloadImage.fillClockwise = true;
+        reloadImage.fillAmount = 1f;
+        reloadImage.preserveAspect = true;
+        reloadImage.color = Color.white;
+        reloadImage.raycastTarget = false;
+        reloadImage.gameObject.SetActive(false);
         return cursorImage;
     }
 
@@ -1369,6 +1433,84 @@ public static class TankiGameplayBootstrap
         HitMarkerDisplay markerDisplay = EnsureComponent<HitMarkerDisplay>(parent.gameObject);
         markerDisplay.Configure(markerImage, canvas);
         return markerImage;
+    }
+
+    private static Image EnsureEnemyMarkers(Transform parent, Canvas canvas)
+    {
+        RectTransform markerRect;
+        Image markerImage = GetOrCreateImage(parent, "Enemy Marker Template", out markerRect);
+        markerRect.anchorMin = new Vector2(0.5f, 0.5f);
+        markerRect.anchorMax = new Vector2(0.5f, 0.5f);
+        markerRect.pivot = new Vector2(0.5f, 0.5f);
+        markerRect.anchoredPosition = Vector2.zero;
+        markerRect.sizeDelta = new Vector2(44f, 44f);
+        markerRect.localScale = Vector3.one;
+
+        markerImage.sprite = LoadEnemyMarkerSprite();
+        if (markerImage.sprite == null)
+        {
+            markerImage.sprite = CreateFallbackEnemyMarkerSprite();
+        }
+        markerImage.type = Image.Type.Simple;
+        markerImage.preserveAspect = true;
+        markerImage.color = Color.white;
+        markerImage.raycastTarget = false;
+        markerImage.gameObject.SetActive(false);
+
+        EnemyScreenMarkerDisplay markerDisplay = EnsureComponent<EnemyScreenMarkerDisplay>(parent.gameObject);
+        markerDisplay.Configure(markerImage, canvas);
+        return markerImage;
+    }
+
+    private static Image EnsureDamageVignette(Transform parent)
+    {
+        RectTransform vignetteRect;
+        Image vignetteImage = GetOrCreateImage(parent, "Player Damage Vignette", out vignetteRect);
+        vignetteRect.anchorMin = Vector2.zero;
+        vignetteRect.anchorMax = Vector2.one;
+        vignetteRect.pivot = new Vector2(0.5f, 0.5f);
+        vignetteRect.anchoredPosition = Vector2.zero;
+        vignetteRect.offsetMin = Vector2.zero;
+        vignetteRect.offsetMax = Vector2.zero;
+        vignetteImage.raycastTarget = false;
+        vignetteImage.enabled = false;
+        vignetteImage.transform.SetAsFirstSibling();
+        return vignetteImage;
+    }
+
+    private static EnemyWaveAnnouncement EnsureWaveAnnouncement(Transform parent)
+    {
+        RectTransform textRect;
+        Text waveText = GetOrCreateText(parent, "Wave Announcement", out textRect);
+        textRect.anchorMin = new Vector2(0.5f, 0.5f);
+        textRect.anchorMax = new Vector2(0.5f, 0.5f);
+        textRect.pivot = new Vector2(0.5f, 0.5f);
+        textRect.anchoredPosition = new Vector2(0f, 112f);
+        textRect.sizeDelta = new Vector2(520f, 92f);
+        waveText.alignment = TextAnchor.MiddleCenter;
+        waveText.fontSize = 54;
+        waveText.fontStyle = FontStyle.Bold;
+        waveText.color = Color.white;
+        waveText.raycastTarget = false;
+
+        Shadow shadow = waveText.GetComponent<Shadow>();
+        if (shadow == null)
+        {
+            shadow = waveText.gameObject.AddComponent<Shadow>();
+        }
+
+        shadow.effectColor = new Color(0f, 0f, 0f, 0.75f);
+        shadow.effectDistance = new Vector2(3f, -3f);
+
+        CanvasGroup canvasGroup = waveText.GetComponent<CanvasGroup>();
+        if (canvasGroup == null)
+        {
+            canvasGroup = waveText.gameObject.AddComponent<CanvasGroup>();
+        }
+
+        EnemyWaveAnnouncement announcement = EnsureComponent<EnemyWaveAnnouncement>(waveText.gameObject);
+        announcement.Configure(waveText, canvasGroup);
+        return announcement;
     }
 
     private static Button EnsureRestartButton(Transform parent)
@@ -1426,6 +1568,64 @@ public static class TankiGameplayBootstrap
         }
 #endif
         return null;
+    }
+
+    private static Sprite LoadEnemyMarkerSprite()
+    {
+        Sprite sprite = LoadUiSprite(EnemyMarkerSpritePath);
+        if (sprite != null)
+        {
+            return sprite;
+        }
+
+#if UNITY_EDITOR
+        string[] guids = AssetDatabase.FindAssets("Enemy Marker t:Texture2D", new[] { "Assets/UI" });
+        foreach (string guid in guids)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            sprite = LoadUiSprite(path);
+            if (sprite != null)
+            {
+                return sprite;
+            }
+        }
+
+        guids = AssetDatabase.FindAssets("Enemy_Marker t:Texture2D", new[] { "Assets/UI" });
+        foreach (string guid in guids)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            sprite = LoadUiSprite(path);
+            if (sprite != null)
+            {
+                return sprite;
+            }
+        }
+#endif
+
+        return null;
+    }
+
+    private static Sprite CreateFallbackEnemyMarkerSprite()
+    {
+        const int size = 64;
+        Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        Color clear = new Color(1f, 1f, 1f, 0f);
+        Color white = Color.white;
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                Vector2 point = new Vector2(x / (float)(size - 1), y / (float)(size - 1));
+                bool insideArrow = point.x > 0.18f
+                    && Mathf.Abs(point.y - 0.5f) < Mathf.Lerp(0.08f, 0.36f, point.x);
+                texture.SetPixel(x, y, insideArrow ? white : clear);
+            }
+        }
+
+        texture.Apply();
+        texture.name = "Fallback Enemy Marker";
+        return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
     }
 
     private static Image GetOrCreateImage(Transform parent, string objectName, out RectTransform rectTransform)

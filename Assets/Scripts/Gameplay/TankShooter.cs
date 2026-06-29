@@ -12,13 +12,16 @@ public sealed class TankShooter : MonoBehaviour
     [SerializeField] private Vector3 projectileForwardAxis = Vector3.forward;
     [SerializeField] private float fallbackMuzzleDistance = 2.8f;
     [SerializeField] private float projectileSpeed = 18f;
-    [SerializeField] private float shotCooldown = 0.25f;
+    [SerializeField] private float shotCooldown = 1f;
     [SerializeField] private TankTeam ownerTeam = TankTeam.Player;
     [SerializeField] private int damage = 25;
 
     public event Action Shot;
 
     private float lastShotTime = -999f;
+
+    public float ShotCooldown => shotCooldown;
+    public float ReloadNormalized => shotCooldown <= 0f ? 1f : Mathf.Clamp01((Time.time - lastShotTime) / shotCooldown);
 
     public void Configure(Transform turretTransform, GameObject projectilePrefabOverride, Transform muzzleTransform)
     {
@@ -32,6 +35,11 @@ public sealed class TankShooter : MonoBehaviour
     public void ConfigureProjectileSpeed(float newProjectileSpeed)
     {
         projectileSpeed = Mathf.Max(0f, newProjectileSpeed);
+    }
+
+    public void ConfigureShotCooldown(float newShotCooldown)
+    {
+        shotCooldown = Mathf.Max(0f, newShotCooldown);
     }
 
     public void ConfigureDamage(TankTeam team, int damageAmount)

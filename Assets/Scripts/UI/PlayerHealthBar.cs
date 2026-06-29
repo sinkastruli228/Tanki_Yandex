@@ -14,7 +14,9 @@ public sealed class PlayerHealthBar : MonoBehaviour
     [SerializeField] private GameObject gameOverPanel;
     [SerializeField] private Button restartButton;
     [SerializeField] private Image gameplayCursorImage;
+    [SerializeField] private Image gameplayCursorReloadImage;
     [SerializeField] private RectTransform gameplayCursorRect;
+    [SerializeField] private TankShooter playerShooter;
 
     private bool gameOverShown;
 
@@ -27,6 +29,8 @@ public sealed class PlayerHealthBar : MonoBehaviour
         restartButton = restart;
         gameplayCursorImage = cursorImage;
         gameplayCursorRect = cursorImage != null ? cursorImage.rectTransform : null;
+        gameplayCursorReloadImage = FindReloadImage(cursorImage);
+        playerShooter = target != null ? target.GetComponent<TankShooter>() : null;
         gameOverShown = false;
         GameplayInputBlocked = false;
 
@@ -48,6 +52,7 @@ public sealed class PlayerHealthBar : MonoBehaviour
     {
         UpdateVisual();
         UpdateGameplayCursor();
+        UpdateReloadCursor();
         TryHandleRestartClickFallback();
     }
 
@@ -94,6 +99,11 @@ public sealed class PlayerHealthBar : MonoBehaviour
             gameplayCursorImage.raycastTarget = false;
         }
 
+        if (gameplayCursorReloadImage != null)
+        {
+            gameplayCursorReloadImage.raycastTarget = false;
+        }
+
         if (Application.isPlaying)
         {
             Cursor.visible = !showGameplayCursor;
@@ -128,6 +138,47 @@ public sealed class PlayerHealthBar : MonoBehaviour
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.None;
         gameplayCursorRect.position = Mouse.current.position.ReadValue();
+    }
+
+    private void UpdateReloadCursor()
+    {
+        if (gameplayCursorImage == null || gameplayCursorReloadImage == null)
+        {
+            return;
+        }
+
+        bool isActive = gameplayCursorImage.gameObject.activeSelf
+            && target != null
+            && target.IsAlive
+            && playerShooter != null;
+
+        if (!isActive)
+        {
+            gameplayCursorImage.color = Color.white;
+            gameplayCursorReloadImage.gameObject.SetActive(false);
+            return;
+        }
+
+        float reloadProgress = playerShooter.ReloadNormalized;
+        bool isReloading = reloadProgress < 0.995f;
+        gameplayCursorImage.color = isReloading
+            ? new Color(0.34f, 0.34f, 0.34f, 0.9f)
+            : Color.white;
+
+        gameplayCursorReloadImage.gameObject.SetActive(isReloading);
+        gameplayCursorReloadImage.fillAmount = reloadProgress;
+        gameplayCursorReloadImage.color = Color.white;
+    }
+
+    private static Image FindReloadImage(Image cursorImage)
+    {
+        if (cursorImage == null)
+        {
+            return null;
+        }
+
+        Transform reloadTransform = cursorImage.transform.Find("Reload Fill");
+        return reloadTransform != null ? reloadTransform.GetComponent<Image>() : null;
     }
 
     private void SetPlayerControlEnabled(bool isEnabled)
