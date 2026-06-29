@@ -54,6 +54,17 @@ public sealed class TankHealth : MonoBehaviour
         }
     }
 
+    public void Heal(int amount)
+    {
+        if (amount <= 0 || currentHealth <= 0 || currentHealth >= maxHealth)
+        {
+            return;
+        }
+
+        currentHealth = Mathf.Min(maxHealth, currentHealth + amount);
+        Changed?.Invoke(this);
+    }
+
     private void OnValidate()
     {
         maxHealth = Mathf.Max(1, maxHealth);

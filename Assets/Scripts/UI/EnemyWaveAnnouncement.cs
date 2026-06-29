@@ -32,8 +32,9 @@ public sealed class EnemyWaveAnnouncement : MonoBehaviour
             yield break;
         }
 
-        waveText.text = $"{waveNumber} волна";
+        waveText.text = $"{waveNumber} \u0432\u043e\u043b\u043d\u0430";
         gameObject.SetActive(true);
+        transform.SetAsLastSibling();
         yield return Fade(0f, 1f, fadeInTime);
 
         if (holdTime > 0f)

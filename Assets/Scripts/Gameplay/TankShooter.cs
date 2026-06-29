@@ -15,6 +15,7 @@ public sealed class TankShooter : MonoBehaviour
     [SerializeField] private float shotCooldown = 1f;
     [SerializeField] private TankTeam ownerTeam = TankTeam.Player;
     [SerializeField] private int damage = 25;
+    [SerializeField] private bool useLowerProjectileHitbox;
 
     public event Action Shot;
 
@@ -46,6 +47,11 @@ public sealed class TankShooter : MonoBehaviour
     {
         ownerTeam = team;
         damage = Mathf.Max(0, damageAmount);
+    }
+
+    public void ConfigureLowerProjectileHitbox(bool enabled)
+    {
+        useLowerProjectileHitbox = enabled;
     }
 
     private void Reset()
@@ -86,6 +92,7 @@ public sealed class TankShooter : MonoBehaviour
         }
 
         projectileMovement.ConfigureDamage(ownerTeam, damage, gameObject);
+        projectileMovement.ConfigureLowerHitbox(useLowerProjectileHitbox);
         projectileMovement.Launch(direction, projectileSpeed, projectileForwardAxis);
         IgnoreTankCollisions(projectile);
         lastShotTime = Time.time;

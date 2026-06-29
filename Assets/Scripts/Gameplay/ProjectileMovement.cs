@@ -7,6 +7,8 @@ public sealed class ProjectileMovement : MonoBehaviour
     public static event System.Action<Vector3> Impacted;
     public static event System.Action<Vector3> DamagedTank;
 
+    private const float LowerHitboxVerticalOffset = -2.4f;
+
     [SerializeField] private Vector3 localForwardAxis = Vector3.forward;
     [SerializeField] private float speed = 18f;
     [SerializeField] private float lifetime = 4f;
@@ -17,6 +19,9 @@ public sealed class ProjectileMovement : MonoBehaviour
     [SerializeField] private float trailLifetime = 0.18f;
     [SerializeField] private float trailStartWidth = 0.34f;
     [SerializeField] private float trailEndWidth = 0.04f;
+    [SerializeField] private bool useLowerHitbox;
+    [SerializeField] private Vector3 lowerHitboxOffset = new Vector3(0f, LowerHitboxVerticalOffset, 0f);
+    [SerializeField] private Vector3 lowerHitboxSize = new Vector3(1.8f, 3.2f, 3.4f);
 
     private Vector3 direction;
     private float planeY;
@@ -25,6 +30,7 @@ public sealed class ProjectileMovement : MonoBehaviour
     private GameObject owner;
     private TrailRenderer trail;
     private Transform trailAnchor;
+    private BoxCollider lowerHitboxCollider;
     private static Material trailMaterial;
 
     private void Awake()
@@ -80,6 +86,13 @@ public sealed class ProjectileMovement : MonoBehaviour
         ownerTeam = team;
         damage = Mathf.Max(0, damageAmount);
         owner = ownerObject;
+    }
+
+    public void ConfigureLowerHitbox(bool enabled, float verticalOffset = LowerHitboxVerticalOffset)
+    {
+        useLowerHitbox = enabled;
+        lowerHitboxOffset = new Vector3(0f, verticalOffset, 0f);
+        EnsureCollision();
     }
 
     private void OnCollisionEnter(Collision collision)
@@ -177,6 +190,62 @@ public sealed class ProjectileMovement : MonoBehaviour
 
         if (TryOverlapCapsuleHit(start, end, out hitPoint))
         {
+            return true;
+        }
+
+        if (useLowerHitbox && TryLowerBoxSweepHit(start, end, out hitPoint))
+        {
+            return true;
+        }
+
+        hitPoint = end;
+        return false;
+    }
+
+    private bool TryLowerBoxSweepHit(Vector3 start, Vector3 end, out Vector3 hitPoint)
+    {
+        Vector3 travel = end - start;
+        float distance = travel.magnitude;
+        if (distance <= 0.001f)
+        {
+            hitPoint = end;
+            return false;
+        }
+
+        Quaternion orientation = TankPlaneMath.RotationLookingAlong(direction, localForwardAxis);
+        Vector3 worldOffset = orientation * lowerHitboxOffset;
+        RaycastHit[] hits = Physics.BoxCastAll(
+            start + worldOffset,
+            lowerHitboxSize * 0.5f,
+            travel / distance,
+            orientation,
+            distance,
+            Physics.DefaultRaycastLayers,
+            QueryTriggerInteraction.Ignore);
+
+        System.Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
+        foreach (RaycastHit hit in hits)
+        {
+            Collider hitCollider = hit.collider;
+            if (hitCollider == null || ShouldIgnoreCollider(hitCollider))
+            {
+                continue;
+            }
+
+            TankHealth health = hitCollider.GetComponentInParent<TankHealth>();
+            if (health == null)
+            {
+                continue;
+            }
+
+            if (!health.IsAlive || health.Team == ownerTeam)
+            {
+                continue;
+            }
+
+            health.TakeDamage(damage);
+            DamagedTank?.Invoke(hit.point.sqrMagnitude > 0.001f ? hit.point : end);
+            hitPoint = hit.point.sqrMagnitude > 0.001f ? hit.point : end;
             return true;
         }
 
@@ -286,6 +355,8 @@ public sealed class ProjectileMovement : MonoBehaviour
             }
         }
 
+        ConfigureLowerHitboxCollider();
+
         Rigidbody body = GetComponent<Rigidbody>();
         if (body == null)
         {
@@ -295,6 +366,23 @@ public sealed class ProjectileMovement : MonoBehaviour
         body.useGravity = false;
         body.isKinematic = true;
         body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+    }
+
+    private void ConfigureLowerHitboxCollider()
+    {
+        if (lowerHitboxCollider == null)
+        {
+            Transform existing = transform.Find("Lower Hitbox");
+            if (existing != null)
+            {
+                lowerHitboxCollider = existing.GetComponent<BoxCollider>();
+            }
+        }
+
+        if (lowerHitboxCollider != null)
+        {
+            lowerHitboxCollider.enabled = false;
+        }
     }
 
     private void EnsureTrail()

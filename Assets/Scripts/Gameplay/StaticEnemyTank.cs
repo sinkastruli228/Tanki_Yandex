@@ -34,6 +34,7 @@ public sealed class StaticEnemyTank : MonoBehaviour
     [SerializeField] private AudioSource shotSource;
     [SerializeField] private float shotVolume = 1f;
     [SerializeField] private MuzzleShotEffect shotEffect;
+    [SerializeField] private bool useLowerProjectileHitbox;
 
     private float lastShotTime = -999f;
     private float lastAvoidanceSide = 1f;
@@ -78,6 +79,11 @@ public sealed class StaticEnemyTank : MonoBehaviour
     public void ConfigureShotEffect(MuzzleShotEffect effect)
     {
         shotEffect = effect;
+    }
+
+    public void ConfigureLowerProjectileHitbox(bool enabled)
+    {
+        useLowerProjectileHitbox = enabled;
     }
 
     private void Update()
@@ -262,6 +268,11 @@ public sealed class StaticEnemyTank : MonoBehaviour
                 continue;
             }
 
+            if (hitCollider.transform == transform || hitCollider.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
             if (hitCollider.transform == target.transform || hitCollider.transform.IsChildOf(target.transform))
             {
                 targetWasHit = true;
@@ -364,8 +375,15 @@ public sealed class StaticEnemyTank : MonoBehaviour
 
     private void Fire(Transform launchTransform, Vector3 direction)
     {
-        Vector3 spawnPosition = muzzlePoint != null ? muzzlePoint.position : launchTransform.position + direction * 2.8f;
-        Quaternion spawnRotation = TankPlaneMath.RotationLookingAlong(direction, projectileForwardAxis);
+        Transform shotTransform = muzzlePoint != null ? muzzlePoint : launchTransform;
+        Vector3 shotDirection = TankPlaneMath.Flatten(shotTransform.TransformDirection(projectileForwardAxis));
+        if (shotDirection.sqrMagnitude <= 0.001f)
+        {
+            shotDirection = direction;
+        }
+
+        Vector3 spawnPosition = muzzlePoint != null ? muzzlePoint.position : launchTransform.position + shotDirection * 2.8f;
+        Quaternion spawnRotation = TankPlaneMath.RotationLookingAlong(shotDirection, projectileForwardAxis);
         GameObject projectile = Instantiate(projectilePrefab, spawnPosition, spawnRotation);
 
         ProjectileMovement projectileMovement = projectile.GetComponent<ProjectileMovement>();
@@ -375,7 +393,8 @@ public sealed class StaticEnemyTank : MonoBehaviour
         }
 
         projectileMovement.ConfigureDamage(TankTeam.Enemy, damage, gameObject);
-        projectileMovement.Launch(direction, projectileSpeed, projectileForwardAxis);
+        projectileMovement.ConfigureLowerHitbox(useLowerProjectileHitbox);
+        projectileMovement.Launch(shotDirection, projectileSpeed, projectileForwardAxis);
         IgnoreOwnCollisions(projectile);
         lastShotTime = Time.time;
         PlayShotAudio(spawnPosition);

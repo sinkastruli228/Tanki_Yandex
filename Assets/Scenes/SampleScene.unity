@@ -10131,6 +10131,7 @@ MonoBehaviour:
   shotSource: {fileID: 1419104825}
   shotVolume: 1
   shotEffect: {fileID: 315918771}
+  useLowerProjectileHitbox: 0
 --- !u!114 &315918773
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -11291,6 +11292,63 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1001 &340574443
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 4625222505520073900, guid: ff41ef7528ff48a449b084881677e784, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -725.6608
+      objectReference: {fileID: 0}
+    - target: {fileID: 4625222505520073900, guid: ff41ef7528ff48a449b084881677e784, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 1.4894054
+      objectReference: {fileID: 0}
+    - target: {fileID: 4625222505520073900, guid: ff41ef7528ff48a449b084881677e784, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -510.8157
+      objectReference: {fileID: 0}
+    - target: {fileID: 4625222505520073900, guid: ff41ef7528ff48a449b084881677e784, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4625222505520073900, guid: ff41ef7528ff48a449b084881677e784, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4625222505520073900, guid: ff41ef7528ff48a449b084881677e784, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4625222505520073900, guid: ff41ef7528ff48a449b084881677e784, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4625222505520073900, guid: ff41ef7528ff48a449b084881677e784, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4625222505520073900, guid: ff41ef7528ff48a449b084881677e784, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4625222505520073900, guid: ff41ef7528ff48a449b084881677e784, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5439160815466501654, guid: ff41ef7528ff48a449b084881677e784, type: 3}
+      propertyPath: m_Name
+      value: Tank Snow
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: ff41ef7528ff48a449b084881677e784, type: 3}
 --- !u!4 &345198087 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5216520479017541492, guid: 125f7efe8f91aff4abd37bd1d4e5970f, type: 3}
@@ -16919,6 +16977,7 @@ MonoBehaviour:
   normalButton: {fileID: 1538423901}
   desertButton: {fileID: 106981495}
   snowButton: {fileID: 400688930}
+  mausButton: {fileID: 0}
 --- !u!114 &770724383
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -19844,6 +19903,7 @@ MonoBehaviour:
   shotSource: {fileID: 327796141}
   shotVolume: 1
   shotEffect: {fileID: 879340059}
+  useLowerProjectileHitbox: 0
 --- !u!114 &879340061
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -25432,6 +25492,7 @@ MonoBehaviour:
   shotCooldown: 1
   ownerTeam: 0
   damage: 25
+  useLowerProjectileHitbox: 0
 --- !u!114 &1251796463
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -29566,11 +29627,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::EnemyWaveSpawner
   playerHealth: {fileID: 1251796458}
   enemyPrefab: {fileID: 6652329383885110562, guid: 8314a074c82133941824e90520eca922, type: 3}
+  bossPrefab: {fileID: 0}
   missilePrefab: {fileID: 2778224715605573606, guid: ec25f4a564e04e64483005ac377cef22, type: 3}
   waveAnnouncement: {fileID: 308482223}
   delayBetweenWaves: 10
   terrainEdgeMargin: 38
+  generatedWallMargin: 18
   enemyRoot: {fileID: 339278221}
+  pickupRoot: {fileID: 0}
+  infiniteMode: 0
 --- !u!4 &1499359422
 Transform:
   m_ObjectHideFlags: 0
@@ -43750,6 +43815,7 @@ MonoBehaviour:
   shotSource: {fileID: 1395314596}
   shotVolume: 1
   shotEffect: {fileID: 2027704870}
+  useLowerProjectileHitbox: 0
 --- !u!114 &2027704872
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -45686,3 +45752,4 @@ SceneRoots:
   - {fileID: 1894677369}
   - {fileID: 1499359422}
   - {fileID: 339278221}
+  - {fileID: 340574443}

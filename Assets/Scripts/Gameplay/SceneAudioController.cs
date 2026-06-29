@@ -19,6 +19,34 @@ public sealed class SceneAudioController : MonoBehaviour
         musicSource = ConfigureLoopSource("Music Ambient Loop", musicSource, musicClip, musicVolume);
     }
 
+    public void SetMutedForMenu(bool muted)
+    {
+        SetSourceMuted(ambientSource, muted);
+        SetSourceMuted(musicSource, muted);
+    }
+
+    private static void SetSourceMuted(AudioSource source, bool muted)
+    {
+        if (source == null)
+        {
+            return;
+        }
+
+        source.mute = muted;
+        if (muted)
+        {
+            source.Pause();
+        }
+        else
+        {
+            source.UnPause();
+            if (Application.isPlaying && !source.isPlaying && source.clip != null)
+            {
+                source.Play();
+            }
+        }
+    }
+
     private AudioSource ConfigureLoopSource(string objectName, AudioSource source, AudioClip clip, float volume)
     {
         if (clip == null)

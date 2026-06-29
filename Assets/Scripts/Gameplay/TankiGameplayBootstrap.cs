@@ -15,11 +15,26 @@ public static class TankiGameplayBootstrap
     private const string TankDesertPrefabPath = "Assets/Models/Tank/Tank Desert.prefab";
     private const string TankSnowPrefabPath = "Assets/Models/Tank/Tank Snow.prefab";
     private const string TankEnemyPrefabPath = "Assets/Models/Tank/Tank Enemy.prefab";
+    private const string TankMausPrefabPath = "Assets/Models/Tank/Tank_Maus.prefab";
     private const string MissilePrefabPath = "Assets/Models/Missle/Missile.prefab";
     private const string BoxPrefabPath = "Assets/Models/Box/Box.prefab";
     private const string ScopeSpritePath = "Assets/UI/Scope.png";
     private const string HitMarkerSpritePath = "Assets/UI/Hit_Marker.png";
     private const string EnemyMarkerSpritePath = "Assets/UI/Enemy Marker.png";
+    private const string MenuLogoPath = "Assets/UI/Menu_UI/Logo_Menu.png";
+    private const string MenuBackgroundPath = "Assets/UI/Menu_UI/Menu_Background.PNG";
+    private const string MenuTankImagePath = "Assets/UI/Menu_UI/Menu_Tank.png";
+    private const string MenuBattleButtonPath = "Assets/UI/Menu_UI/Battle_Button.png";
+    private const string MenuInfiniteButtonPath = "Assets/UI/Menu_UI/Infinite_Button.png";
+    private const string MenuSettingsButtonPath = "Assets/UI/Menu_UI/Settings_Button.png";
+    private const string MenuExitButtonPath = "Assets/UI/Menu_UI/Exit_Button.png";
+    private const string MenuButtonsPlacePath = "Assets/UI/Menu_UI/Place_Buttons_Menu.png";
+    private const string MenuFontPath = "Assets/Font/BankGothic Md BT/bankgothicmdbt_medium.otf";
+    private const string TankCardPath = "Assets/UI/Tank_Profiles/Tank_Card.png";
+    private const string NormalTankProfilePath = "Assets/UI/Tank_Profiles/Normal_Tank.png";
+    private const string DesertTankProfilePath = "Assets/UI/Tank_Profiles/Desert_Tank.png";
+    private const string SnowTankProfilePath = "Assets/UI/Tank_Profiles/Snow_Tank.png";
+    private const string RuntimeTankModelRootName = "Runtime Tank Model";
     private const string AmbientClipPath = "Assets/Sounds/Ambient.mp3";
     private const string MovementClipPath = "Assets/Sounds/Movement.mp3";
     private const string MusicAmbientClipPath = "Assets/Sounds/Music_Ambient.mp3";
@@ -40,7 +55,10 @@ public static class TankiGameplayBootstrap
     private const float EnemyShotCooldown = 2.5f;
     private const float PhysicsBoxGroundClearance = 0.3f;
     private const int TankMaxHealth = 100;
+    private const int MausTankMaxHealth = 250;
     private const int ProjectileDamage = 25;
+    private const int MausProjectileDamage = 50;
+    private const float MausVisualScale = 1.5f;
     private static readonly Vector3 DefaultForwardAxis = Vector3.forward;
     private static readonly Vector3[] DefaultEnemyPositions =
     {
@@ -67,6 +85,19 @@ public static class TankiGameplayBootstrap
         new Vector3(0f, 85f, 0f)
     };
     private static int lastSetupFrame = -1;
+    private static GameObject currentTank;
+    private static GameObject currentMissilePrefab;
+    private static Camera currentCamera;
+    private static TankHealth currentPlayerHealth;
+    private static GameObject currentPlayerUi;
+    private static TankSelectionMenu currentTankSelectionMenu;
+    private static EnemyWaveAnnouncement currentWaveAnnouncement;
+    private static MainMenuController currentMainMenu;
+    private static bool battleStarted;
+    private static bool infiniteMode;
+    private static bool hasInitialTankPose;
+    private static Vector3 initialTankPosition;
+    private static Quaternion initialTankRotation;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void RegisterSceneReloadSetup()
@@ -86,6 +117,8 @@ public static class TankiGameplayBootstrap
         lastSetupFrame = Time.frameCount;
         Time.timeScale = 1f;
         PlayerHealthBar.GameplayInputBlocked = false;
+        battleStarted = false;
+        infiniteMode = false;
 
         GameObject tank = FindTankInScene();
         if (tank == null)
@@ -108,6 +141,16 @@ public static class TankiGameplayBootstrap
             return;
         }
 
+        currentTank = tank;
+        currentMissilePrefab = missilePrefab;
+        currentCamera = camera;
+        if (!hasInitialTankPose)
+        {
+            initialTankPosition = tank.transform.position;
+            initialTankRotation = tank.transform.rotation;
+            hasInitialTankPose = true;
+        }
+
         Rigidbody body = EnsureComponent<Rigidbody>(tank);
         body.useGravity = false;
         body.isKinematic = true;
@@ -126,8 +169,9 @@ public static class TankiGameplayBootstrap
 
         TankHealth playerHealth = EnsureComponent<TankHealth>(tank);
         playerHealth.Configure(TankTeam.Player, TankMaxHealth, false);
+        currentPlayerHealth = playerHealth;
 
-        Transform turret = FindChildRecursive(tank.transform, "Cylinder.002") ?? FindChildRecursive(tank.transform, "cylinder.002");
+        Transform turret = FindTankTurret(tank.transform);
         turret = turret != null ? turret : tank.transform;
 
         TankDeathEffect playerDeathEffect = EnsureComponent<TankDeathEffect>(tank);
@@ -152,7 +196,9 @@ public static class TankiGameplayBootstrap
         shooter.Configure(turret, missilePrefab, muzzlePoint);
         shooter.ConfigureProjectileSpeed(ProjectileSpeed);
         shooter.ConfigureShotCooldown(PlayerShotCooldown);
-        shooter.ConfigureDamage(TankTeam.Player, ProjectileDamage);
+        bool isMaus = IsMausTank(tank.transform, turret);
+        shooter.ConfigureDamage(TankTeam.Player, isMaus ? MausProjectileDamage : ProjectileDamage);
+        shooter.ConfigureLowerProjectileHitbox(isMaus);
 
         TankAudioController tankAudio = EnsureComponent<TankAudioController>(tank);
         tankAudio.Configure(controller, shooter, muzzlePoint, LoadMovementClip(), LoadShotClip());
@@ -180,9 +226,17 @@ public static class TankiGameplayBootstrap
         ImpactExplosion.ConfigureAudio(LoadRicochetClip(), LoadExplosionClip());
         EnsurePhysicsBoxes(persistent);
         GameObject playerUi = EnsurePlayerHealthBar(playerHealth);
-        EnsureTankSelectionMenu(tank, playerUi.transform);
-        EnemyWaveAnnouncement waveAnnouncement = EnsureWaveAnnouncement(playerUi.transform);
-        EnsureEnemyWaves(missilePrefab, playerHealth, waveAnnouncement, persistent);
+        currentPlayerUi = playerUi;
+        currentTankSelectionMenu = EnsureTankSelectionMenu(tank, playerUi.transform, false);
+        currentWaveAnnouncement = EnsureWaveAnnouncement(playerUi.transform);
+        EnsureMainMenu(tank, camera);
+        if (!battleStarted)
+        {
+            playerUi.SetActive(false);
+            SetPlayerTankControl(false);
+            PlayerHealthBar.GameplayInputBlocked = true;
+            SetGameplayAudioMuted(true);
+        }
 
         if (persistent)
         {
@@ -210,6 +264,239 @@ public static class TankiGameplayBootstrap
                 EditorUtility.SetDirty(crate.gameObject);
             }
 #endif
+        }
+    }
+
+    public static void StartBattle()
+    {
+        StartBattle(false);
+    }
+
+    public static void StartInfiniteBattle()
+    {
+        StartBattle(true);
+    }
+
+    private static void StartBattle(bool infinite)
+    {
+        if (currentTank == null || currentMissilePrefab == null || currentPlayerHealth == null)
+        {
+            return;
+        }
+
+        battleStarted = true;
+        infiniteMode = infinite;
+        SetGameplayAudioMuted(false);
+        ClearRuntimeBattleObjects();
+        currentPlayerHealth.Configure(TankTeam.Player, GetPlayerMaxHealth(currentTank), false);
+
+        if (currentPlayerUi != null)
+        {
+            currentPlayerUi.SetActive(true);
+        }
+
+        if (currentMainMenu != null)
+        {
+            currentMainMenu.HideMenu();
+        }
+
+        if (currentCamera != null)
+        {
+            TopDownCameraFollow follow = EnsureComponent<TopDownCameraFollow>(currentCamera.gameObject);
+            follow.enabled = true;
+            follow.Configure(currentTank.transform, TopDownCameraFollow.DefaultOffset, TopDownCameraFollow.DefaultLookOffset);
+            follow.SetFrozen(false);
+            currentCamera.fieldOfView = 58f;
+        }
+
+        TankController controller = currentTank.GetComponent<TankController>();
+        if (controller != null)
+        {
+            controller.RefreshMovementPlane();
+        }
+
+        if (currentTankSelectionMenu != null)
+        {
+            currentTankSelectionMenu.ShowSelection();
+        }
+    }
+
+    public static void StartWavesAfterTankSelection()
+    {
+        if (!battleStarted || currentMissilePrefab == null || currentPlayerHealth == null)
+        {
+            return;
+        }
+
+        EnsureEnemyWaves(currentMissilePrefab, currentPlayerHealth, currentWaveAnnouncement, false, infiniteMode);
+    }
+
+    public static void ReturnToMainMenu()
+    {
+        battleStarted = false;
+        infiniteMode = false;
+        SetGameplayAudioMuted(true);
+        ClearRuntimeBattleObjects();
+
+        if (currentPlayerHealth != null)
+        {
+            currentPlayerHealth.Configure(TankTeam.Player, GetPlayerMaxHealth(currentTank), false);
+        }
+
+        SetPlayerTankControl(false);
+        PlayerHealthBar.GameplayInputBlocked = true;
+
+        if (currentPlayerUi != null)
+        {
+            currentPlayerUi.SetActive(false);
+        }
+
+        if (currentMainMenu != null)
+        {
+            currentMainMenu.ShowMenu();
+        }
+    }
+
+    public static void QuitGame()
+    {
+        Time.timeScale = 1f;
+#if UNITY_EDITOR
+        EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
+    }
+
+    public static void RestartGameplayScene()
+    {
+        Time.timeScale = 1f;
+        Cursor.visible = true;
+        Cursor.lockState = CursorLockMode.None;
+        PlayerHealthBar.GameplayInputBlocked = false;
+        battleStarted = false;
+        infiniteMode = false;
+        ResetCurrentTankToInitialPose();
+        ClearRuntimeBattleObjects();
+        currentTank = null;
+        currentMissilePrefab = null;
+        currentCamera = null;
+        currentPlayerHealth = null;
+        currentPlayerUi = null;
+        currentTankSelectionMenu = null;
+        currentWaveAnnouncement = null;
+        currentMainMenu = null;
+        hasInitialTankPose = false;
+        lastSetupFrame = -1;
+
+        Scene activeScene = SceneManager.GetActiveScene();
+        SceneManager.LoadScene(activeScene.name);
+    }
+
+    private static void ResetCurrentTankToInitialPose()
+    {
+        if (currentTank == null || !hasInitialTankPose)
+        {
+            return;
+        }
+
+        currentTank.transform.SetPositionAndRotation(initialTankPosition, initialTankRotation);
+        Rigidbody body = currentTank.GetComponent<Rigidbody>();
+        if (body != null)
+        {
+            body.position = initialTankPosition;
+            body.rotation = initialTankRotation;
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+        }
+
+        TankController controller = currentTank.GetComponent<TankController>();
+        if (controller != null)
+        {
+            controller.RefreshMovementPlane();
+        }
+    }
+
+    private static void SetPlayerTankControl(bool isEnabled)
+    {
+        if (currentTank == null)
+        {
+            return;
+        }
+
+        TankController controller = currentTank.GetComponent<TankController>();
+        if (controller != null)
+        {
+            controller.enabled = isEnabled;
+        }
+
+        TankShooter shooter = currentTank.GetComponent<TankShooter>();
+        if (shooter != null)
+        {
+            shooter.enabled = isEnabled;
+        }
+
+        TankTurretAim turretAim = currentTank.GetComponent<TankTurretAim>();
+        if (turretAim != null)
+        {
+            turretAim.enabled = isEnabled;
+        }
+    }
+
+    private static int GetPlayerMaxHealth(GameObject tank)
+    {
+        Transform turret = tank != null ? FindTankTurret(tank.transform) : null;
+        return IsMausTank(tank != null ? tank.transform : null, turret) ? MausTankMaxHealth : TankMaxHealth;
+    }
+
+    private static void ClearRuntimeBattleObjects()
+    {
+        foreach (EnemyWaveSpawner spawner in Object.FindObjectsByType<EnemyWaveSpawner>(FindObjectsSortMode.None))
+        {
+            Object.Destroy(spawner.gameObject);
+        }
+
+        foreach (TankHealth health in Object.FindObjectsByType<TankHealth>(FindObjectsSortMode.None))
+        {
+            if (health != null && health.Team == TankTeam.Enemy)
+            {
+                Object.Destroy(health.gameObject);
+            }
+        }
+
+        foreach (HealthPickup pickup in Object.FindObjectsByType<HealthPickup>(FindObjectsSortMode.None))
+        {
+            Object.Destroy(pickup.gameObject);
+        }
+
+        foreach (ProjectileMovement projectile in Object.FindObjectsByType<ProjectileMovement>(FindObjectsSortMode.None))
+        {
+            Object.Destroy(projectile.gameObject);
+        }
+    }
+
+    private static void SetGameplayAudioMuted(bool muted)
+    {
+        SceneAudioController sceneAudio = Object.FindFirstObjectByType<SceneAudioController>();
+        if (sceneAudio != null)
+        {
+            sceneAudio.SetMutedForMenu(muted);
+        }
+
+        foreach (TankAudioController tankAudio in Object.FindObjectsByType<TankAudioController>(FindObjectsSortMode.None))
+        {
+            AudioSource[] sources = tankAudio.GetComponentsInChildren<AudioSource>(true);
+            foreach (AudioSource source in sources)
+            {
+                source.mute = muted;
+                if (muted)
+                {
+                    source.Pause();
+                }
+                else
+                {
+                    source.UnPause();
+                }
+            }
         }
     }
 
@@ -448,7 +735,7 @@ public static class TankiGameplayBootstrap
         return groundY;
     }
 
-    private static void EnsureEnemyWaves(GameObject missilePrefab, TankHealth playerHealth, EnemyWaveAnnouncement waveAnnouncement, bool persistent)
+    private static void EnsureEnemyWaves(GameObject missilePrefab, TankHealth playerHealth, EnemyWaveAnnouncement waveAnnouncement, bool persistent, bool infinite = false)
     {
         GameObject tankPrefab = LoadEnemyTankPrefab();
         if (tankPrefab == null || missilePrefab == null || playerHealth == null)
@@ -463,7 +750,7 @@ public static class TankiGameplayBootstrap
         }
 
         EnemyWaveSpawner spawner = EnsureComponent<EnemyWaveSpawner>(spawnerObject);
-        spawner.Configure(playerHealth, tankPrefab, missilePrefab, waveAnnouncement);
+        spawner.Configure(playerHealth, tankPrefab, LoadMausTankPrefab(), missilePrefab, waveAnnouncement, infinite);
 
 #if UNITY_EDITOR
         if (persistent)
@@ -522,6 +809,10 @@ public static class TankiGameplayBootstrap
 
     public static void ConfigureEnemy(GameObject enemy, GameObject missilePrefab, TankHealth playerHealth)
     {
+        Transform turret = FindTankTurret(enemy.transform);
+        turret = turret != null ? turret : enemy.transform;
+        bool isMaus = IsMausTank(enemy.transform, turret);
+
         TankController controller = enemy.GetComponent<TankController>();
         if (controller == null)
         {
@@ -532,7 +823,10 @@ public static class TankiGameplayBootstrap
         {
             controller.enabled = true;
             controller.ConfigureModelAxis(DefaultForwardAxis);
-            controller.ConfigureMovement(TankForwardSpeed * 0.72f, TankReverseSpeed * 0.55f, TankAcceleration * 0.8f);
+            controller.ConfigureMovement(
+                isMaus ? TankForwardSpeed : TankForwardSpeed * 0.72f,
+                isMaus ? TankReverseSpeed : TankReverseSpeed * 0.55f,
+                isMaus ? TankAcceleration : TankAcceleration * 0.8f);
             controller.SetExternalInput(0f, 0f);
         }
 
@@ -564,10 +858,7 @@ public static class TankiGameplayBootstrap
         ConfigureShadowCasters(enemy);
 
         TankHealth enemyHealth = EnsureComponent<TankHealth>(enemy);
-        enemyHealth.Configure(TankTeam.Enemy, TankMaxHealth, false);
-
-        Transform turret = FindChildRecursive(enemy.transform, "Cylinder.002") ?? FindChildRecursive(enemy.transform, "cylinder.002");
-        turret = turret != null ? turret : enemy.transform;
+        enemyHealth.Configure(TankTeam.Enemy, isMaus ? MausTankMaxHealth : TankMaxHealth, false);
 
         TankDeathEffect deathEffect = EnsureComponent<TankDeathEffect>(enemy);
         deathEffect.Configure(enemyHealth, turret, true);
@@ -583,26 +874,59 @@ public static class TankiGameplayBootstrap
         }
 
         StaticEnemyTank enemyTank = EnsureComponent<StaticEnemyTank>(enemy);
-        enemyTank.Configure(playerHealth, turret, muzzlePoint, missilePrefab, ProjectileSpeed, ProjectileDamage, EnemyAttackRange, EnemyDetectionRange, EnemyShotCooldown, DefaultForwardAxis);
+        enemyTank.Configure(playerHealth, turret, muzzlePoint, missilePrefab, ProjectileSpeed, isMaus ? MausProjectileDamage : ProjectileDamage, EnemyAttackRange, EnemyDetectionRange, EnemyShotCooldown, DefaultForwardAxis);
         enemyTank.ConfigureShotAudio(LoadShotClip());
+        enemyTank.ConfigureLowerProjectileHitbox(isMaus);
         MuzzleShotEffect muzzleEffect = EnsureComponent<MuzzleShotEffect>(enemy);
         muzzleEffect.Configure(muzzlePoint, DefaultForwardAxis);
         enemyTank.ConfigureShotEffect(muzzleEffect);
+
+        TankWorldHealthBar worldHealthBar = EnsureComponent<TankWorldHealthBar>(enemy);
+        worldHealthBar.Configure(enemyHealth, currentCamera != null ? currentCamera : Camera.main);
     }
 
     public static void ApplyDesertTankSkin(GameObject tank)
     {
+        RestoreOriginalTankModel(tank);
         ApplyTankMaterialsFromPrefab(tank, LoadDesertTankPrefab());
+        RefreshPlayerTankRig(tank);
     }
 
     public static void ApplyNormalTankSkin(GameObject tank)
     {
+        RestoreOriginalTankModel(tank);
         ApplyTankMaterialsFromPrefab(tank, LoadTankPrefab());
+        RefreshPlayerTankRig(tank);
     }
 
     public static void ApplySnowTankSkin(GameObject tank)
     {
+        RestoreOriginalTankModel(tank);
         ApplyTankMaterialsFromPrefab(tank, LoadSnowTankPrefab());
+        RefreshPlayerTankRig(tank);
+    }
+
+    public static void ApplyMausTank(GameObject tank)
+    {
+        GameObject mausPrefab = LoadMausTankPrefab();
+        if (tank == null || mausPrefab == null)
+        {
+            return;
+        }
+
+        RestoreOriginalTankModel(tank);
+        SetOriginalTankRenderersEnabled(tank, false);
+
+        GameObject runtimeRoot = new GameObject(RuntimeTankModelRootName);
+        runtimeRoot.transform.SetParent(tank.transform, false);
+
+        GameObject visual = Object.Instantiate(mausPrefab, runtimeRoot.transform);
+        visual.name = "Tank_Maus Visual";
+        visual.transform.localPosition = Vector3.zero;
+        visual.transform.localRotation = Quaternion.identity;
+        visual.transform.localScale = Vector3.one * MausVisualScale;
+        DisableNestedRuntimeComponents(visual);
+        RefreshPlayerTankRig(tank);
     }
 
     private static void ApplyTankMaterialsFromPrefab(GameObject tank, GameObject sourcePrefab)
@@ -623,6 +947,145 @@ public static class TankiGameplayBootstrap
             }
 
             targetRenderer.sharedMaterials = sourceRenderer.sharedMaterials;
+        }
+    }
+
+    private static void RefreshPlayerTankRig(GameObject tank)
+    {
+        if (tank == null)
+        {
+            return;
+        }
+
+        Rigidbody body = EnsureComponent<Rigidbody>(tank);
+        AlignTankBottomToGround(tank, body, GetGroundY(tank.transform.position));
+        EnsureSingleBodyMeshCollider(tank);
+        ConfigureShadowCasters(tank);
+
+        TankController controller = EnsureComponent<TankController>(tank);
+        controller.ConfigureModelAxis(DefaultForwardAxis);
+        controller.ConfigureMovement(TankForwardSpeed, TankReverseSpeed, TankAcceleration);
+        controller.RefreshMovementPlane();
+
+        Transform turret = FindTankTurret(tank.transform);
+        turret = turret != null ? turret : tank.transform;
+        bool isMaus = IsMausTank(tank.transform, turret);
+
+        TankHealth playerHealth = EnsureComponent<TankHealth>(tank);
+        playerHealth.Configure(TankTeam.Player, isMaus ? MausTankMaxHealth : TankMaxHealth, false);
+        currentPlayerHealth = playerHealth;
+        TankDeathEffect playerDeathEffect = EnsureComponent<TankDeathEffect>(tank);
+        playerDeathEffect.Configure(playerHealth, turret, false);
+
+        Transform muzzlePoint = FindChildRecursive(turret, "MuzzlePoint");
+        if (muzzlePoint == null)
+        {
+            muzzlePoint = CreateMuzzlePoint(turret);
+        }
+        else
+        {
+            PositionMuzzlePoint(turret, muzzlePoint);
+        }
+
+        TankTurretAim turretAim = EnsureComponent<TankTurretAim>(tank);
+        turretAim.Configure(turret, currentCamera);
+
+        TankShooter shooter = EnsureComponent<TankShooter>(tank);
+        shooter.Configure(turret, currentMissilePrefab, muzzlePoint);
+        shooter.ConfigureProjectileSpeed(ProjectileSpeed);
+        shooter.ConfigureShotCooldown(PlayerShotCooldown);
+        shooter.ConfigureDamage(TankTeam.Player, isMaus ? MausProjectileDamage : ProjectileDamage);
+        shooter.ConfigureLowerProjectileHitbox(isMaus);
+
+        TankAudioController tankAudio = EnsureComponent<TankAudioController>(tank);
+        tankAudio.Configure(controller, shooter, muzzlePoint, LoadMovementClip(), LoadShotClip());
+
+        MuzzleShotEffect muzzleEffect = EnsureComponent<MuzzleShotEffect>(tank);
+        muzzleEffect.Configure(muzzlePoint, DefaultForwardAxis, shooter);
+
+        TankTrackDust trackDust = EnsureComponent<TankTrackDust>(tank);
+        trackDust.Configure(controller, DefaultForwardAxis);
+
+        if (currentCamera != null)
+        {
+            TopDownCameraFollow follow = EnsureComponent<TopDownCameraFollow>(currentCamera.gameObject);
+            follow.ConfigureShakeSources(shooter, playerHealth);
+        }
+    }
+
+    private static void RestoreOriginalTankModel(GameObject tank)
+    {
+        if (tank == null)
+        {
+            return;
+        }
+
+        Transform runtimeRoot = tank.transform.Find(RuntimeTankModelRootName);
+        if (runtimeRoot != null)
+        {
+            if (Application.isPlaying)
+            {
+                Object.Destroy(runtimeRoot.gameObject);
+            }
+            else
+            {
+                Object.DestroyImmediate(runtimeRoot.gameObject);
+            }
+        }
+
+        SetOriginalTankRenderersEnabled(tank, true);
+    }
+
+    private static void SetOriginalTankRenderersEnabled(GameObject tank, bool isEnabled)
+    {
+        if (tank == null)
+        {
+            return;
+        }
+
+        Transform runtimeRoot = tank.transform.Find(RuntimeTankModelRootName);
+        Renderer[] renderers = tank.GetComponentsInChildren<Renderer>(true);
+        foreach (Renderer renderer in renderers)
+        {
+            if (runtimeRoot != null && renderer.transform.IsChildOf(runtimeRoot))
+            {
+                continue;
+            }
+
+            renderer.enabled = isEnabled;
+        }
+    }
+
+    private static void DisableNestedRuntimeComponents(GameObject visual)
+    {
+        if (visual == null)
+        {
+            return;
+        }
+
+        Rigidbody[] rigidbodies = visual.GetComponentsInChildren<Rigidbody>(true);
+        foreach (Rigidbody rigidbody in rigidbodies)
+        {
+            rigidbody.isKinematic = true;
+            rigidbody.detectCollisions = false;
+        }
+
+        TankController[] controllers = visual.GetComponentsInChildren<TankController>(true);
+        foreach (TankController controller in controllers)
+        {
+            controller.enabled = false;
+        }
+
+        TankShooter[] shooters = visual.GetComponentsInChildren<TankShooter>(true);
+        foreach (TankShooter shooter in shooters)
+        {
+            shooter.enabled = false;
+        }
+
+        TankTurretAim[] aims = visual.GetComponentsInChildren<TankTurretAim>(true);
+        foreach (TankTurretAim aim in aims)
+        {
+            aim.enabled = false;
         }
     }
 
@@ -897,6 +1360,11 @@ public static class TankiGameplayBootstrap
 
         foreach (Renderer renderer in renderers)
         {
+            if (renderer == null || !renderer.enabled)
+            {
+                continue;
+            }
+
             if (!hasBounds)
             {
                 combinedBounds = renderer.bounds;
@@ -912,8 +1380,8 @@ public static class TankiGameplayBootstrap
 
     private static void EnsureSingleBodyMeshCollider(GameObject tank)
     {
-        Transform turret = FindChildRecursive(tank.transform, "Cylinder.002") ?? FindChildRecursive(tank.transform, "cylinder.002");
-        Transform colliderTarget = FindChildRecursive(tank.transform, "Cylinder") ?? FindChildRecursive(tank.transform, "cylinder");
+        Transform turret = FindTankTurret(tank.transform);
+        Transform colliderTarget = FindTankBody(tank.transform, turret);
         if (colliderTarget == null || colliderTarget == turret)
         {
             colliderTarget = FindLargestMeshTransform(tank.transform, turret);
@@ -945,6 +1413,59 @@ public static class TankiGameplayBootstrap
         meshCollider.convex = true;
         meshCollider.isTrigger = false;
         RemoveExtraTankColliders(tank, meshCollider);
+    }
+
+    private static Transform FindTankTurret(Transform root)
+    {
+        Transform runtimeRoot = root != null ? root.Find(RuntimeTankModelRootName) : null;
+        Transform runtimeTurret = FindChildRecursive(runtimeRoot, "tank turret")
+            ?? FindChildRecursive(runtimeRoot, "Cylinder.002")
+            ?? FindChildRecursive(runtimeRoot, "cylinder.002");
+        if (runtimeTurret != null)
+        {
+            return runtimeTurret;
+        }
+
+        return FindChildRecursive(root, "tank turret")
+            ?? FindChildRecursive(root, "Cylinder.002")
+            ?? FindChildRecursive(root, "cylinder.002");
+    }
+
+    private static Transform FindTankBody(Transform root, Transform turret)
+    {
+        Transform runtimeRoot = root != null ? root.Find(RuntimeTankModelRootName) : null;
+        Transform runtimeBody = FindChildRecursive(runtimeRoot, "body")
+            ?? FindChildRecursive(runtimeRoot, "Cylinder")
+            ?? FindChildRecursive(runtimeRoot, "cylinder");
+        if (runtimeBody != null && runtimeBody != turret)
+        {
+            return runtimeBody;
+        }
+
+        Transform body = FindChildRecursive(root, "body")
+            ?? FindChildRecursive(root, "Cylinder")
+            ?? FindChildRecursive(root, "cylinder");
+        return body != turret ? body : null;
+    }
+
+    private static bool IsMausTurret(Transform turret)
+    {
+        return turret != null && string.Equals(turret.name, "tank turret", System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsMausTank(Transform root, Transform turret)
+    {
+        if (IsMausTurret(turret))
+        {
+            return true;
+        }
+
+        if (root != null && root.name.Contains("Maus", System.StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return FindChildRecursive(root, "tank turret") != null;
     }
 
     private static void EnsureMeshCollidersOnAllParts(GameObject tank)
@@ -1063,9 +1584,73 @@ public static class TankiGameplayBootstrap
 
     private static void PositionMuzzlePoint(Transform turret, Transform muzzlePoint)
     {
+        if (IsMausTurret(turret) && TryGetMausMuzzleLocalPosition(turret, out Vector3 mausMuzzlePosition))
+        {
+            muzzlePoint.localPosition = mausMuzzlePosition;
+            muzzlePoint.localRotation = Quaternion.identity;
+            return;
+        }
+
         muzzlePoint.localPosition = DefaultForwardAxis * EstimateMuzzleDistance(turret, DefaultForwardAxis)
             + Vector3.up * MuzzleHeightOffset;
         muzzlePoint.localRotation = Quaternion.identity;
+    }
+
+    private static bool TryGetMausMuzzleLocalPosition(Transform turret, out Vector3 localPosition)
+    {
+        localPosition = Vector3.zero;
+        if (turret == null)
+        {
+            return false;
+        }
+
+        Renderer[] renderers = turret.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length == 0)
+        {
+            return false;
+        }
+
+        bool hasBounds = false;
+        float farthestForward = 0f;
+        float highestBarrelY = 0f;
+        foreach (Renderer renderer in renderers)
+        {
+            Bounds bounds = renderer.bounds;
+            Vector3[] corners =
+            {
+                new Vector3(bounds.min.x, bounds.min.y, bounds.min.z),
+                new Vector3(bounds.min.x, bounds.min.y, bounds.max.z),
+                new Vector3(bounds.min.x, bounds.max.y, bounds.min.z),
+                new Vector3(bounds.min.x, bounds.max.y, bounds.max.z),
+                new Vector3(bounds.max.x, bounds.min.y, bounds.min.z),
+                new Vector3(bounds.max.x, bounds.min.y, bounds.max.z),
+                new Vector3(bounds.max.x, bounds.max.y, bounds.min.z),
+                new Vector3(bounds.max.x, bounds.max.y, bounds.max.z)
+            };
+
+            for (int i = 0; i < corners.Length; i++)
+            {
+                Vector3 localCorner = turret.InverseTransformPoint(corners[i]);
+                if (!hasBounds || localCorner.z > farthestForward)
+                {
+                    farthestForward = localCorner.z;
+                    highestBarrelY = localCorner.y;
+                    hasBounds = true;
+                }
+                else if (Mathf.Abs(localCorner.z - farthestForward) <= 0.05f)
+                {
+                    highestBarrelY = Mathf.Max(highestBarrelY, localCorner.y);
+                }
+            }
+        }
+
+        if (!hasBounds)
+        {
+            return false;
+        }
+
+        localPosition = new Vector3(0f, highestBarrelY, farthestForward + 0.18f);
+        return true;
     }
 
     private static float EstimateMuzzleDistance(Transform turret, Vector3 localForwardAxis)
@@ -1120,57 +1705,38 @@ public static class TankiGameplayBootstrap
 
     private static GameObject LoadMissilePrefab()
     {
-#if UNITY_EDITOR
-        return AssetDatabase.LoadAssetAtPath<GameObject>(MissilePrefabPath);
-#else
-        return null;
-#endif
+        return LoadProjectAsset<GameObject>(MissilePrefabPath);
     }
 
     private static GameObject LoadTankPrefab()
     {
-#if UNITY_EDITOR
-        return AssetDatabase.LoadAssetAtPath<GameObject>(TankPrefabPath);
-#else
-        return null;
-#endif
+        return LoadProjectAsset<GameObject>(TankPrefabPath);
     }
 
     private static GameObject LoadEnemyTankPrefab()
     {
-#if UNITY_EDITOR
-        GameObject enemyTank = AssetDatabase.LoadAssetAtPath<GameObject>(TankEnemyPrefabPath);
-        return enemyTank != null ? enemyTank : AssetDatabase.LoadAssetAtPath<GameObject>(TankPrefabPath);
-#else
-        return null;
-#endif
+        GameObject enemyTank = LoadProjectAsset<GameObject>(TankEnemyPrefabPath);
+        return enemyTank != null ? enemyTank : LoadProjectAsset<GameObject>(TankPrefabPath);
+    }
+
+    private static GameObject LoadMausTankPrefab()
+    {
+        return LoadProjectAsset<GameObject>(TankMausPrefabPath);
     }
 
     private static GameObject LoadDesertTankPrefab()
     {
-#if UNITY_EDITOR
-        return AssetDatabase.LoadAssetAtPath<GameObject>(TankDesertPrefabPath);
-#else
-        return null;
-#endif
+        return LoadProjectAsset<GameObject>(TankDesertPrefabPath);
     }
 
     private static GameObject LoadSnowTankPrefab()
     {
-#if UNITY_EDITOR
-        return AssetDatabase.LoadAssetAtPath<GameObject>(TankSnowPrefabPath);
-#else
-        return null;
-#endif
+        return LoadProjectAsset<GameObject>(TankSnowPrefabPath);
     }
 
     private static GameObject LoadBoxPrefab()
     {
-#if UNITY_EDITOR
-        return AssetDatabase.LoadAssetAtPath<GameObject>(BoxPrefabPath);
-#else
-        return null;
-#endif
+        return LoadProjectAsset<GameObject>(BoxPrefabPath);
     }
 
     private static AudioClip LoadAmbientClip()
@@ -1205,11 +1771,50 @@ public static class TankiGameplayBootstrap
 
     private static AudioClip LoadAudioClip(string path)
     {
+        return LoadProjectAsset<AudioClip>(path);
+    }
+
+    private static Font LoadMenuFont()
+    {
+        return LoadProjectAsset<Font>(MenuFontPath);
+    }
+
+    private static T LoadProjectAsset<T>(string assetPath) where T : Object
+    {
 #if UNITY_EDITOR
-        return AssetDatabase.LoadAssetAtPath<AudioClip>(path);
-#else
-        return null;
+        T editorAsset = AssetDatabase.LoadAssetAtPath<T>(assetPath);
+        if (editorAsset != null)
+        {
+            return editorAsset;
+        }
 #endif
+        return Resources.Load<T>(ToResourcesPath(assetPath));
+    }
+
+    private static string ToResourcesPath(string assetPath)
+    {
+        const string assetsPrefix = "Assets/";
+        const string resourcesPrefix = "Resources/";
+
+        string path = assetPath.Replace('\\', '/');
+        if (path.StartsWith(assetsPrefix))
+        {
+            path = path.Substring(assetsPrefix.Length);
+        }
+
+        int resourcesIndex = path.IndexOf(resourcesPrefix, System.StringComparison.OrdinalIgnoreCase);
+        if (resourcesIndex >= 0)
+        {
+            path = path.Substring(resourcesIndex + resourcesPrefix.Length);
+        }
+
+        int extensionIndex = path.LastIndexOf('.');
+        if (extensionIndex > 0)
+        {
+            path = path.Substring(0, extensionIndex);
+        }
+
+        return path;
     }
 
     private static GameObject EnsurePlayerHealthBar(TankHealth playerHealth)
@@ -1230,10 +1835,10 @@ public static class TankiGameplayBootstrap
 
         RectTransform backgroundRect;
         Image backgroundImage = GetOrCreateImage(root.transform, "Health Bar Background", out backgroundRect);
-        backgroundRect.anchorMin = new Vector2(0.5f, 1f);
-        backgroundRect.anchorMax = new Vector2(0.5f, 1f);
-        backgroundRect.pivot = new Vector2(0.5f, 1f);
-        backgroundRect.anchoredPosition = new Vector2(0f, -20f);
+        backgroundRect.anchorMin = new Vector2(0f, 0f);
+        backgroundRect.anchorMax = new Vector2(0f, 0f);
+        backgroundRect.pivot = new Vector2(0f, 0f);
+        backgroundRect.anchoredPosition = new Vector2(28f, 28f);
         backgroundRect.sizeDelta = new Vector2(360f, 24f);
         backgroundImage.color = new Color(0f, 0f, 0f, 0.65f);
 
@@ -1260,11 +1865,219 @@ public static class TankiGameplayBootstrap
         return root;
     }
 
-    private static void EnsureTankSelectionMenu(GameObject tank, Transform parent)
+    private static MainMenuController EnsureMainMenu(GameObject tank, Camera camera)
+    {
+        GameObject root = GameObject.Find("Main Menu UI");
+        if (root == null)
+        {
+            root = new GameObject("Main Menu UI", typeof(RectTransform));
+        }
+
+        Canvas canvas = EnsureComponent<Canvas>(root);
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 200;
+
+        CanvasScaler canvasScaler = EnsureComponent<CanvasScaler>(root);
+        canvasScaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        canvasScaler.referenceResolution = new Vector2(1280f, 720f);
+
+        EnsureComponent<GraphicRaycaster>(root);
+        EnsureEventSystem();
+
+        Font menuFont = LoadMenuFont();
+
+        RectTransform darkRect;
+        Image darkBackground = GetOrCreateImage(root.transform, "Dark Background", out darkRect);
+        darkRect.anchorMin = Vector2.zero;
+        darkRect.anchorMax = Vector2.one;
+        darkRect.offsetMin = Vector2.zero;
+        darkRect.offsetMax = Vector2.zero;
+        darkBackground.sprite = LoadUiSprite(MenuBackgroundPath);
+        darkBackground.type = Image.Type.Simple;
+        darkBackground.preserveAspect = false;
+        darkBackground.color = Color.white;
+        darkBackground.raycastTarget = true;
+
+        RectTransform panelRect;
+        Image panelImage = GetOrCreateImage(darkRect, "Menu Panel", out panelRect);
+        panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+        panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+        panelRect.pivot = new Vector2(0.5f, 0.5f);
+        panelRect.anchoredPosition = Vector2.zero;
+        panelRect.sizeDelta = new Vector2(1070f, 610f);
+        AspectRatioFitter aspectRatio = panelImage.GetComponent<AspectRatioFitter>();
+        if (aspectRatio == null)
+        {
+            aspectRatio = panelImage.gameObject.AddComponent<AspectRatioFitter>();
+        }
+
+        aspectRatio.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+        aspectRatio.aspectRatio = 16f / 9f;
+        panelImage.color = new Color(1f, 1f, 1f, 0f);
+        panelImage.raycastTarget = false;
+
+        RectTransform logoRect;
+        Image logoImage = GetOrCreateImage(panelRect, "Logo", out logoRect);
+        logoRect.anchorMin = new Vector2(0f, 1f);
+        logoRect.anchorMax = new Vector2(0f, 1f);
+        logoRect.pivot = new Vector2(0f, 1f);
+        logoRect.anchoredPosition = new Vector2(92f, -64f);
+        logoRect.sizeDelta = new Vector2(990f, 89f);
+        logoImage.sprite = LoadUiSprite(MenuLogoPath);
+        logoImage.type = Image.Type.Simple;
+        logoImage.preserveAspect = true;
+        logoImage.color = Color.white;
+        logoImage.raycastTarget = false;
+        SetImageWidthKeepingAspect(logoImage, 990f);
+
+        Text fallbackLogo = null;
+        if (logoImage.sprite == null)
+        {
+            RectTransform fallbackLogoRect;
+            fallbackLogo = GetOrCreateText(panelRect, "Logo Text Fallback", out fallbackLogoRect);
+            fallbackLogoRect.anchorMin = logoRect.anchorMin;
+            fallbackLogoRect.anchorMax = logoRect.anchorMax;
+            fallbackLogoRect.pivot = logoRect.pivot;
+            fallbackLogoRect.anchoredPosition = logoRect.anchoredPosition;
+            fallbackLogoRect.sizeDelta = logoRect.sizeDelta;
+            fallbackLogo.text = "LOGO";
+            fallbackLogo.fontSize = 82;
+            fallbackLogo.fontStyle = FontStyle.Bold;
+            fallbackLogo.alignment = TextAnchor.MiddleLeft;
+            fallbackLogo.color = Color.white;
+            ApplyMenuFont(fallbackLogo, menuFont);
+        }
+
+        RectTransform menuTankRect;
+        Image menuTankImage = GetOrCreateImage(panelRect, "Menu Tank Image", out menuTankRect);
+        menuTankRect.anchorMin = new Vector2(1f, 0.5f);
+        menuTankRect.anchorMax = new Vector2(1f, 0.5f);
+        menuTankRect.pivot = new Vector2(1f, 0.5f);
+        menuTankRect.anchoredPosition = new Vector2(-90f, -8f);
+        menuTankRect.sizeDelta = new Vector2(460f, 310f);
+        menuTankRect.localRotation = Quaternion.Euler(0f, 0f, 180f);
+        menuTankImage.sprite = LoadUiSprite(MenuTankImagePath);
+        menuTankImage.type = Image.Type.Simple;
+        menuTankImage.preserveAspect = true;
+        menuTankImage.color = Color.white;
+        menuTankImage.raycastTarget = false;
+        menuTankImage.gameObject.SetActive(false);
+
+        Transform oldPlace = panelRect.Find("Menu Buttons Place");
+        if (oldPlace != null)
+        {
+            Object.Destroy(oldPlace.gameObject);
+        }
+
+        Button battleButton = EnsureMainMenuButton(panelRect, "To Battle Button", "To Battle", new Vector2(-6f, -255f), menuFont, MenuBattleButtonPath);
+        Button infiniteButton = EnsureMainMenuButton(panelRect, "Infinite Button", "Infinite", new Vector2(-6f, -324f), menuFont, MenuInfiniteButtonPath);
+        Button settingsButton = EnsureMainMenuButton(panelRect, "Settings Button", "Settings", new Vector2(-6f, -393f), menuFont, MenuSettingsButtonPath);
+        Button exitButton = EnsureMainMenuButton(panelRect, "Exit Button", "Exit", new Vector2(-6f, -462f), menuFont, MenuExitButtonPath);
+
+        RectTransform stubRect;
+        Text settingsStub = GetOrCreateText(panelRect, "Settings Stub", out stubRect);
+        stubRect.anchorMin = new Vector2(0f, 1f);
+        stubRect.anchorMax = new Vector2(0f, 1f);
+        stubRect.pivot = new Vector2(0f, 1f);
+        stubRect.anchoredPosition = new Vector2(-6f, -531f);
+        stubRect.sizeDelta = new Vector2(520f, 34f);
+        settingsStub.text = "Settings will be added later";
+        settingsStub.fontSize = 19;
+        settingsStub.alignment = TextAnchor.MiddleLeft;
+        settingsStub.color = Color.white;
+        settingsStub.raycastTarget = false;
+        ApplyMenuFont(settingsStub, menuFont);
+        settingsStub.gameObject.SetActive(false);
+
+        MainMenuController menu = EnsureComponent<MainMenuController>(root);
+        menu.Configure(darkBackground.gameObject, battleButton, infiniteButton, settingsButton, exitButton, settingsStub, camera, tank != null ? tank.transform : null, LoadEnemyTankPrefab());
+        currentMainMenu = menu;
+        return menu;
+    }
+
+    private static Button EnsureMainMenuButton(Transform parent, string objectName, string label, Vector2 anchoredPosition, Font menuFont, string spritePath)
+    {
+        RectTransform buttonRect;
+        Image buttonImage = GetOrCreateImage(parent, objectName, out buttonRect);
+        buttonRect.anchorMin = new Vector2(0f, 1f);
+        buttonRect.anchorMax = new Vector2(0f, 1f);
+        buttonRect.pivot = new Vector2(0f, 1f);
+        buttonRect.anchoredPosition = anchoredPosition;
+        buttonRect.sizeDelta = new Vector2(760f, 68f);
+        buttonImage.sprite = LoadUiSprite(spritePath);
+        buttonImage.type = Image.Type.Simple;
+        buttonImage.preserveAspect = true;
+        buttonImage.color = Color.white;
+        buttonImage.raycastTarget = true;
+        SetImageWidthKeepingAspect(buttonImage, 760f);
+
+        Outline outline = buttonImage.GetComponent<Outline>();
+        if (outline != null)
+        {
+            Object.Destroy(outline);
+        }
+
+        Button button = EnsureComponent<Button>(buttonImage.gameObject);
+        button.transition = Selectable.Transition.None;
+        ColorBlock colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(1.55f, 1.55f, 1.55f, 1f);
+        colors.pressedColor = new Color(0.45f, 0.45f, 0.45f, 1f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.disabledColor = new Color(0.45f, 0.45f, 0.45f, 0.7f);
+        colors.colorMultiplier = 1.35f;
+        colors.fadeDuration = 0.08f;
+        button.colors = colors;
+        MenuButtonHighlight highlight = EnsureComponent<MenuButtonHighlight>(buttonImage.gameObject);
+        highlight.Configure(buttonImage, Color.white, new Color(1f, 1f, 1f, 0.72f), new Color(0.48f, 0.48f, 0.48f, 1f));
+
+        RectTransform textRect;
+        Text buttonText = GetOrCreateText(buttonRect, "Text", out textRect);
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
+        buttonText.text = label;
+        buttonText.fontSize = 31;
+        buttonText.fontStyle = FontStyle.Bold;
+        buttonText.alignment = TextAnchor.MiddleLeft;
+        buttonText.color = Color.white;
+        buttonText.gameObject.SetActive(buttonImage.sprite == null);
+        ApplyMenuFont(buttonText, menuFont);
+        return button;
+    }
+
+    private static void SetImageWidthKeepingAspect(Image image, float width)
+    {
+        if (image == null || image.sprite == null)
+        {
+            return;
+        }
+
+        AspectRatioFitter fitter = image.GetComponent<AspectRatioFitter>();
+        if (fitter != null)
+        {
+            Object.Destroy(fitter);
+        }
+
+        Rect spriteRect = image.sprite.rect;
+        float aspect = spriteRect.height > 0f ? spriteRect.width / spriteRect.height : 1f;
+        image.rectTransform.sizeDelta = new Vector2(width, width / Mathf.Max(0.001f, aspect));
+    }
+
+    private static void ApplyMenuFont(Text text, Font menuFont)
+    {
+        if (text != null && menuFont != null)
+        {
+            text.font = menuFont;
+        }
+    }
+
+    private static TankSelectionMenu EnsureTankSelectionMenu(GameObject tank, Transform parent, bool showImmediately = true)
     {
         if (tank == null || parent == null)
         {
-            return;
+            return null;
         }
 
         RectTransform panelRect;
@@ -1275,7 +2088,7 @@ public static class TankiGameplayBootstrap
         panelRect.anchoredPosition = Vector2.zero;
         panelRect.offsetMin = Vector2.zero;
         panelRect.offsetMax = Vector2.zero;
-        panelImage.color = new Color(0f, 0f, 0f, 0.68f);
+        panelImage.color = new Color(0.12f, 0.12f, 0.12f, 1f);
         panelImage.raycastTarget = true;
 
         RectTransform titleRect;
@@ -1283,22 +2096,24 @@ public static class TankiGameplayBootstrap
         titleRect.anchorMin = new Vector2(0.5f, 0.5f);
         titleRect.anchorMax = new Vector2(0.5f, 0.5f);
         titleRect.pivot = new Vector2(0.5f, 0.5f);
-        titleRect.anchoredPosition = new Vector2(0f, 78f);
+        titleRect.anchoredPosition = new Vector2(0f, 230f);
         titleRect.sizeDelta = new Vector2(460f, 44f);
         title.alignment = TextAnchor.MiddleCenter;
         title.text = "Choose Your Tank";
         title.fontSize = 30;
         title.color = Color.white;
 
-        Button normalButton = EnsureTankSelectionButton(panelRect, "Normal Tank Button", "Normal", new Vector2(-190f, 0f), new Color(0.12f, 0.52f, 0.18f, 1f));
-        Button desertButton = EnsureTankSelectionButton(panelRect, "Desert Tank Button", "Desert", Vector2.zero, new Color(0.72f, 0.48f, 0.18f, 1f));
-        Button snowButton = EnsureTankSelectionButton(panelRect, "Snow Tank Button", "Snow", new Vector2(190f, 0f), new Color(0.72f, 0.88f, 0.92f, 1f));
+        Button normalButton = EnsureTankSelectionButton(panelRect, "Normal Tank Button", "Normal", new Vector2(-410f, -35f), NormalTankProfilePath);
+        Button desertButton = EnsureTankSelectionButton(panelRect, "Desert Tank Button", "Desert", new Vector2(0f, -35f), DesertTankProfilePath);
+        Button snowButton = EnsureTankSelectionButton(panelRect, "Snow Tank Button", "Snow", new Vector2(410f, -35f), SnowTankProfilePath);
+        Button mausButton = EnsureSmallTankSelectionButton(panelRect, "Maus Test Button", "Maus Test", new Vector2(0f, -302f));
 
         TankSelectionMenu menu = EnsureComponent<TankSelectionMenu>(parent.gameObject);
-        menu.Configure(tank, panelImage.gameObject, normalButton, desertButton, snowButton);
+        menu.Configure(tank, panelImage.gameObject, normalButton, desertButton, snowButton, mausButton, showImmediately);
+        return menu;
     }
 
-    private static Button EnsureTankSelectionButton(Transform parent, string objectName, string label, Vector2 position, Color color)
+    private static Button EnsureTankSelectionButton(Transform parent, string objectName, string label, Vector2 position, string tankImagePath)
     {
         RectTransform buttonRect;
         Image buttonImage = GetOrCreateImage(parent, objectName, out buttonRect);
@@ -1306,22 +2121,90 @@ public static class TankiGameplayBootstrap
         buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
         buttonRect.pivot = new Vector2(0.5f, 0.5f);
         buttonRect.anchoredPosition = position;
-        buttonRect.sizeDelta = new Vector2(190f, 56f);
-        buttonImage.color = color;
+        buttonRect.sizeDelta = new Vector2(340f, 453f);
+        buttonImage.sprite = LoadUiSprite(TankCardPath);
+        buttonImage.type = Image.Type.Simple;
+        buttonImage.preserveAspect = true;
+        buttonImage.color = Color.white;
         buttonImage.raycastTarget = true;
 
         Button button = EnsureComponent<Button>(buttonImage.gameObject);
+        button.transition = Selectable.Transition.None;
+        ColorBlock colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(1.18f, 1.18f, 1.18f, 1f);
+        colors.pressedColor = new Color(0.72f, 0.72f, 0.72f, 1f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.colorMultiplier = 1.1f;
+        colors.fadeDuration = 0.08f;
+        button.colors = colors;
+        MenuButtonHighlight highlight = EnsureComponent<MenuButtonHighlight>(buttonImage.gameObject);
+        highlight.Configure(buttonImage, Color.white, new Color(1f, 1f, 1f, 0.72f), new Color(0.55f, 0.55f, 0.55f, 1f));
+
+        RectTransform profileRect;
+        Image profileImage = GetOrCreateImage(buttonRect, "Tank Image", out profileRect);
+        profileRect.anchorMin = new Vector2(0.5f, 1f);
+        profileRect.anchorMax = new Vector2(0.5f, 1f);
+        profileRect.pivot = new Vector2(0.5f, 1f);
+        profileRect.anchoredPosition = new Vector2(0f, -56f);
+        profileImage.sprite = LoadUiSprite(tankImagePath);
+        profileImage.type = Image.Type.Simple;
+        profileImage.preserveAspect = true;
+        profileImage.color = Color.white;
+        profileImage.raycastTarget = false;
+        SetImageWidthKeepingAspect(profileImage, 255f);
+
+        RectTransform textRect;
+        Text buttonText = GetOrCreateText(buttonRect, "Text", out textRect);
+        textRect.anchorMin = new Vector2(0.5f, 0.5f);
+        textRect.anchorMax = new Vector2(0.5f, 0.5f);
+        textRect.pivot = new Vector2(0.5f, 0.5f);
+        textRect.anchoredPosition = new Vector2(0f, -94f);
+        textRect.sizeDelta = new Vector2(280f, 68f);
+        textRect.localRotation = Quaternion.Euler(0f, 0f, 16f);
+        buttonText.alignment = TextAnchor.MiddleCenter;
+        buttonText.text = label;
+        buttonText.fontSize = 38;
+        buttonText.fontStyle = FontStyle.Bold;
+        buttonText.color = Color.white;
+
+        return button;
+    }
+
+    private static Button EnsureSmallTankSelectionButton(Transform parent, string objectName, string label, Vector2 position)
+    {
+        RectTransform buttonRect;
+        Image buttonImage = GetOrCreateImage(parent, objectName, out buttonRect);
+        buttonRect.anchorMin = new Vector2(0.5f, 0.5f);
+        buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
+        buttonRect.pivot = new Vector2(0.5f, 0.5f);
+        buttonRect.anchoredPosition = position;
+        buttonRect.sizeDelta = new Vector2(190f, 46f);
+        buttonImage.sprite = null;
+        buttonImage.type = Image.Type.Simple;
+        buttonImage.color = new Color(1f, 1f, 1f, 0.16f);
+        buttonImage.raycastTarget = true;
+
+        Button button = EnsureComponent<Button>(buttonImage.gameObject);
+        button.transition = Selectable.Transition.None;
+        MenuButtonHighlight highlight = EnsureComponent<MenuButtonHighlight>(buttonImage.gameObject);
+        highlight.Configure(buttonImage, new Color(1f, 1f, 1f, 0.16f), new Color(1f, 1f, 1f, 0.34f), new Color(1f, 1f, 1f, 0.08f));
 
         RectTransform textRect;
         Text buttonText = GetOrCreateText(buttonRect, "Text", out textRect);
         textRect.anchorMin = Vector2.zero;
         textRect.anchorMax = Vector2.one;
+        textRect.pivot = new Vector2(0.5f, 0.5f);
+        textRect.anchoredPosition = Vector2.zero;
         textRect.offsetMin = Vector2.zero;
         textRect.offsetMax = Vector2.zero;
+        textRect.localRotation = Quaternion.identity;
         buttonText.alignment = TextAnchor.MiddleCenter;
         buttonText.text = label;
-        buttonText.fontSize = 23;
+        buttonText.fontSize = 20;
+        buttonText.fontStyle = FontStyle.Bold;
         buttonText.color = Color.white;
+        buttonText.raycastTarget = false;
 
         return button;
     }
@@ -1567,7 +2450,13 @@ public static class TankiGameplayBootstrap
             return Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
         }
 #endif
-        return null;
+        Texture2D runtimeTexture = Resources.Load<Texture2D>(ToResourcesPath(assetPath));
+        if (runtimeTexture == null)
+        {
+            return null;
+        }
+
+        return Sprite.Create(runtimeTexture, new Rect(0f, 0f, runtimeTexture.width, runtimeTexture.height), new Vector2(0.5f, 0.5f), 100f);
     }
 
     private static Sprite LoadEnemyMarkerSprite()

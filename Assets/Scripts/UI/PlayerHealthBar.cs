@@ -234,10 +234,6 @@ public sealed class PlayerHealthBar : MonoBehaviour
 
     private static void RestartScene()
     {
-        Time.timeScale = 1f;
-        Cursor.visible = true;
-        Cursor.lockState = CursorLockMode.None;
-        Scene activeScene = SceneManager.GetActiveScene();
-        SceneManager.LoadScene(activeScene.name);
+        TankiGameplayBootstrap.RestartGameplayScene();
     }
 }
