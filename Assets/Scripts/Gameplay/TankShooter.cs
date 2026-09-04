@@ -20,6 +20,7 @@ public sealed class TankShooter : MonoBehaviour
     public event Action Shot;
 
     private float lastShotTime = -999f;
+    private TankSpecialWeapon specialWeapon;
 
     public float ShotCooldown => shotCooldown;
     public float ReloadNormalized => shotCooldown <= 0f ? 1f : Mathf.Clamp01((Time.time - lastShotTime) / shotCooldown);
@@ -65,6 +66,12 @@ public sealed class TankShooter : MonoBehaviour
         Mouse mouse = Mouse.current;
         if (mouse != null && mouse.leftButton.wasPressedThisFrame)
         {
+            specialWeapon = specialWeapon != null ? specialWeapon : GetComponent<TankSpecialWeapon>();
+            if (specialWeapon != null && specialWeapon.TryHandleFire())
+            {
+                return;
+            }
+
             Fire();
         }
     }
@@ -95,6 +102,12 @@ public sealed class TankShooter : MonoBehaviour
         projectileMovement.ConfigureLowerHitbox(useLowerProjectileHitbox);
         projectileMovement.Launch(direction, projectileSpeed, projectileForwardAxis);
         IgnoreTankCollisions(projectile);
+        lastShotTime = Time.time;
+        Shot?.Invoke();
+    }
+
+    public void NotifySpecialShotFired()
+    {
         lastShotTime = Time.time;
         Shot?.Invoke();
     }

@@ -14,9 +14,6 @@ public sealed class PlayerHealthBar : MonoBehaviour
     [SerializeField] private GameObject gameOverPanel;
     [SerializeField] private Button restartButton;
     [SerializeField] private Image gameplayCursorImage;
-    [SerializeField] private Image gameplayCursorReloadImage;
-    [SerializeField] private RectTransform gameplayCursorRect;
-    [SerializeField] private TankShooter playerShooter;
 
     private bool gameOverShown;
 
@@ -28,9 +25,6 @@ public sealed class PlayerHealthBar : MonoBehaviour
         gameOverPanel = gameOverRoot;
         restartButton = restart;
         gameplayCursorImage = cursorImage;
-        gameplayCursorRect = cursorImage != null ? cursorImage.rectTransform : null;
-        gameplayCursorReloadImage = FindReloadImage(cursorImage);
-        playerShooter = target != null ? target.GetComponent<TankShooter>() : null;
         gameOverShown = false;
         GameplayInputBlocked = false;
 
@@ -52,7 +46,6 @@ public sealed class PlayerHealthBar : MonoBehaviour
     {
         UpdateVisual();
         UpdateGameplayCursor();
-        UpdateReloadCursor();
         TryHandleRestartClickFallback();
     }
 
@@ -64,10 +57,14 @@ public sealed class PlayerHealthBar : MonoBehaviour
         }
 
         fillRect.anchorMin = Vector2.zero;
-        fillRect.anchorMax = new Vector2(target.Normalized, 1f);
+        fillRect.anchorMax = Vector2.one;
         fillRect.offsetMin = Vector2.zero;
         fillRect.offsetMax = Vector2.zero;
-        fillImage.color = new Color(0.15f, 0.85f, 0.15f, 1f);
+        fillImage.type = Image.Type.Filled;
+        fillImage.fillMethod = Image.FillMethod.Vertical;
+        fillImage.fillOrigin = (int)Image.OriginVertical.Bottom;
+        fillImage.fillAmount = target.Normalized;
+        fillImage.color = Color.white;
 
         bool isGameOver = !target.IsAlive;
         if (gameOverPanel != null)
@@ -99,11 +96,6 @@ public sealed class PlayerHealthBar : MonoBehaviour
             gameplayCursorImage.raycastTarget = false;
         }
 
-        if (gameplayCursorReloadImage != null)
-        {
-            gameplayCursorReloadImage.raycastTarget = false;
-        }
-
         if (Application.isPlaying)
         {
             Cursor.visible = !showGameplayCursor;
@@ -113,73 +105,27 @@ public sealed class PlayerHealthBar : MonoBehaviour
 
     private void UpdateGameplayCursor()
     {
-        if (!Application.isPlaying || gameplayCursorRect == null || Mouse.current == null)
+        if (!Application.isPlaying || gameplayCursorImage == null || Mouse.current == null)
         {
             return;
         }
 
         bool isActive = !gameOverShown && !GameplayInputBlocked && target != null && target.IsAlive;
-        if (gameplayCursorImage != null && gameplayCursorImage.gameObject.activeSelf != isActive)
+        if (gameplayCursorImage.gameObject.activeSelf != isActive)
         {
             gameplayCursorImage.gameObject.SetActive(isActive);
         }
 
         if (!isActive)
         {
-            if (GameplayInputBlocked)
-            {
-                Cursor.visible = true;
-                Cursor.lockState = CursorLockMode.None;
-            }
-
             return;
         }
 
+        gameplayCursorImage.rectTransform.position = Mouse.current.position.ReadValue();
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.None;
-        gameplayCursorRect.position = Mouse.current.position.ReadValue();
     }
 
-    private void UpdateReloadCursor()
-    {
-        if (gameplayCursorImage == null || gameplayCursorReloadImage == null)
-        {
-            return;
-        }
-
-        bool isActive = gameplayCursorImage.gameObject.activeSelf
-            && target != null
-            && target.IsAlive
-            && playerShooter != null;
-
-        if (!isActive)
-        {
-            gameplayCursorImage.color = Color.white;
-            gameplayCursorReloadImage.gameObject.SetActive(false);
-            return;
-        }
-
-        float reloadProgress = playerShooter.ReloadNormalized;
-        bool isReloading = reloadProgress < 0.995f;
-        gameplayCursorImage.color = isReloading
-            ? new Color(0.34f, 0.34f, 0.34f, 0.9f)
-            : Color.white;
-
-        gameplayCursorReloadImage.gameObject.SetActive(isReloading);
-        gameplayCursorReloadImage.fillAmount = reloadProgress;
-        gameplayCursorReloadImage.color = Color.white;
-    }
-
-    private static Image FindReloadImage(Image cursorImage)
-    {
-        if (cursorImage == null)
-        {
-            return null;
-        }
-
-        Transform reloadTransform = cursorImage.transform.Find("Reload Fill");
-        return reloadTransform != null ? reloadTransform.GetComponent<Image>() : null;
-    }
 
     private void SetPlayerControlEnabled(bool isEnabled)
     {

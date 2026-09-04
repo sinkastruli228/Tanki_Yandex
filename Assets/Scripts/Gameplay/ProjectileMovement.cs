@@ -5,7 +5,7 @@ using UnityEngine.Rendering;
 public sealed class ProjectileMovement : MonoBehaviour
 {
     public static event System.Action<Vector3> Impacted;
-    public static event System.Action<Vector3> DamagedTank;
+    public static event System.Action<Vector3, bool> DamagedTank;
 
     private const float LowerHitboxVerticalOffset = -2.4f;
 
@@ -139,8 +139,7 @@ public sealed class ProjectileMovement : MonoBehaviour
             return false;
         }
 
-        health.TakeDamage(damage);
-        DamagedTank?.Invoke(hitPoint);
+        DamageTank(health, hitPoint);
         return true;
     }
 
@@ -180,8 +179,7 @@ public sealed class ProjectileMovement : MonoBehaviour
                     continue;
                 }
 
-                health.TakeDamage(damage);
-                DamagedTank?.Invoke(hit.point.sqrMagnitude > 0.001f ? hit.point : end);
+                DamageTank(health, hit.point.sqrMagnitude > 0.001f ? hit.point : end);
             }
 
             hitPoint = hit.point.sqrMagnitude > 0.001f ? hit.point : end;
@@ -198,8 +196,54 @@ public sealed class ProjectileMovement : MonoBehaviour
             return true;
         }
 
+        if (TryTankProximityHit(start, end, out hitPoint))
+        {
+            return true;
+        }
+
         hitPoint = end;
         return false;
+    }
+
+    private bool TryTankProximityHit(Vector3 start, Vector3 end, out Vector3 hitPoint)
+    {
+        TankHealth[] tanks = FindObjectsByType<TankHealth>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        TankHealth closestTank = null;
+        Collider closestCollider = null;
+        float closestDistanceSqr = float.MaxValue;
+
+        foreach (TankHealth tank in tanks)
+        {
+            if (!tank.IsAlive || tank.Team == ownerTeam || (owner != null && tank.gameObject == owner))
+            {
+                continue;
+            }
+
+            Collider tankCollider = tank.GetComponentInChildren<Collider>();
+            Vector3 center = tankCollider != null ? tankCollider.bounds.center : tank.transform.position;
+            center.y = start.y;
+            float hitRadius = collisionRadius + (tankCollider != null
+                ? Mathf.Max(tankCollider.bounds.extents.x, tankCollider.bounds.extents.z)
+                : 2.5f);
+            float distanceSqr = DistanceToSegmentSqr(center, start, end);
+            if (distanceSqr <= hitRadius * hitRadius && distanceSqr < closestDistanceSqr)
+            {
+                closestTank = tank;
+                closestCollider = tankCollider;
+                closestDistanceSqr = distanceSqr;
+            }
+        }
+
+        if (closestTank == null)
+        {
+            hitPoint = end;
+            return false;
+        }
+
+        Vector3 closestOnPath = GetClosestPointOnSegment(closestCollider != null ? closestCollider.bounds.center : closestTank.transform.position, start, end);
+        hitPoint = closestCollider != null ? closestCollider.ClosestPoint(closestOnPath) : closestOnPath;
+        DamageTank(closestTank, hitPoint);
+        return true;
     }
 
     private bool TryLowerBoxSweepHit(Vector3 start, Vector3 end, out Vector3 hitPoint)
@@ -243,8 +287,7 @@ public sealed class ProjectileMovement : MonoBehaviour
                 continue;
             }
 
-            health.TakeDamage(damage);
-            DamagedTank?.Invoke(hit.point.sqrMagnitude > 0.001f ? hit.point : end);
+            DamageTank(health, hit.point.sqrMagnitude > 0.001f ? hit.point : end);
             hitPoint = hit.point.sqrMagnitude > 0.001f ? hit.point : end;
             return true;
         }
@@ -280,8 +323,7 @@ public sealed class ProjectileMovement : MonoBehaviour
                     continue;
                 }
 
-                health.TakeDamage(damage);
-                DamagedTank?.Invoke(GetClosestHitPoint(hitCollider, start, end));
+                DamageTank(health, GetClosestHitPoint(hitCollider, start, end));
             }
 
             hitPoint = GetClosestHitPoint(hitCollider, start, end);
@@ -304,6 +346,39 @@ public sealed class ProjectileMovement : MonoBehaviour
         float t = Mathf.Clamp01(Vector3.Dot(point - start, segment) / lengthSqr);
         Vector3 closest = start + segment * t;
         return (point - closest).sqrMagnitude;
+    }
+
+    private static Vector3 GetClosestPointOnSegment(Vector3 point, Vector3 start, Vector3 end)
+    {
+        Vector3 segment = end - start;
+        float lengthSqr = segment.sqrMagnitude;
+        if (lengthSqr <= 0.0001f)
+        {
+            return start;
+        }
+
+        float t = Mathf.Clamp01(Vector3.Dot(point - start, segment) / lengthSqr);
+        return start + segment * t;
+    }
+
+    private void DamageTank(TankHealth health, Vector3 hitPoint)
+    {
+        health.TakeDamage(damage);
+        bool fatal = !health.IsAlive;
+        NotifyTankDamaged(hitPoint, fatal);
+        if (fatal && ownerTeam == TankTeam.Player && owner != null)
+        {
+            TankCombatRewards rewards = owner.GetComponent<TankCombatRewards>();
+            if (rewards != null)
+            {
+                rewards.RegisterKill();
+            }
+        }
+    }
+
+    public static void NotifyTankDamaged(Vector3 hitPoint, bool fatal)
+    {
+        DamagedTank?.Invoke(hitPoint, fatal);
     }
 
     private static Vector3 GetClosestHitPoint(Collider hitCollider, Vector3 start, Vector3 fallback)

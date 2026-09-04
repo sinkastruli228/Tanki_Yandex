@@ -19,6 +19,11 @@ public static class TankiGameplayBootstrap
     private const string MissilePrefabPath = "Assets/Models/Missle/Missile.prefab";
     private const string BoxPrefabPath = "Assets/Models/Box/Box.prefab";
     private const string ScopeSpritePath = "Assets/UI/Scope.png";
+    private const string HealthBarSpritePath = "Assets/UI/Health_Bar.png";
+    private const string HealthBarGreenSpritePath = "Assets/UI/Health_Bar_Green.png";
+    private const string HealthBarBoltSpritePath = "Assets/UI/Health_Bar_Bolt.png";
+    private const string NitroOpacitySpritePath = "Assets/UI/Nitro_Opacity.png";
+    private const string NitroSpritePath = "Assets/UI/Nitro.png";
     private const string HitMarkerSpritePath = "Assets/UI/Hit_Marker.png";
     private const string EnemyMarkerSpritePath = "Assets/UI/Enemy Marker.png";
     private const string MenuLogoPath = "Assets/UI/Menu_UI/Logo_Menu.png";
@@ -49,6 +54,8 @@ public static class TankiGameplayBootstrap
     private const float TankAcceleration = 86.4f;
     private const float ProjectileSpeed = 140.4f;
     private const float PlayerShotCooldown = 1f;
+    private const float PlayerMouseYawSensitivity = 0.18f;
+    private const float PlayerTurretRotationSpeed = 100f;
     private const float MuzzleHeightOffset = 1.425f;
     private const float EnemyAttackRange = 170f;
     private const float EnemyDetectionRange = 202.5f;
@@ -164,6 +171,8 @@ public static class TankiGameplayBootstrap
         controller.ConfigureMovement(TankForwardSpeed, TankReverseSpeed, TankAcceleration);
         AlignTankBottomToGround(tank, body, GetGroundY(tank.transform.position));
         controller.RefreshMovementPlane();
+        TankNitro playerNitro = EnsureComponent<TankNitro>(tank);
+        playerNitro.Configure(controller);
         EnsureSingleBodyMeshCollider(tank);
         ConfigureShadowCasters(tank);
 
@@ -180,6 +189,7 @@ public static class TankiGameplayBootstrap
         TankTurretAim turretAim = EnsureComponent<TankTurretAim>(tank);
         turretAim.enabled = true;
         turretAim.Configure(turret, camera);
+        turretAim.ConfigureAimSettings(PlayerMouseYawSensitivity, PlayerTurretRotationSpeed);
 
         Transform muzzlePoint = FindChildRecursive(turret, "MuzzlePoint");
         if (muzzlePoint == null)
@@ -200,6 +210,14 @@ public static class TankiGameplayBootstrap
         shooter.ConfigureDamage(TankTeam.Player, isMaus ? MausProjectileDamage : ProjectileDamage);
         shooter.ConfigureLowerProjectileHitbox(isMaus);
 
+        TankCombatRewards combatRewards = EnsureComponent<TankCombatRewards>(tank);
+        TankSpecialWeapon specialWeapon = EnsureComponent<TankSpecialWeapon>(tank);
+        specialWeapon.Configure(muzzlePoint, missilePrefab, combatRewards, camera);
+
+        TankAimLaser aimLaser = EnsureComponent<TankAimLaser>(tank);
+        aimLaser.enabled = true;
+        aimLaser.Configure(muzzlePoint, turret, shooter);
+
         TankAudioController tankAudio = EnsureComponent<TankAudioController>(tank);
         tankAudio.Configure(controller, shooter, muzzlePoint, LoadMovementClip(), LoadShotClip());
 
@@ -214,6 +232,7 @@ public static class TankiGameplayBootstrap
             TopDownCameraFollow follow = EnsureComponent<TopDownCameraFollow>(camera.gameObject);
             follow.enabled = true;
             follow.Configure(tank.transform, TopDownCameraFollow.DefaultOffset, TopDownCameraFollow.DefaultLookOffset);
+            follow.ConfigureTurretCamera(new Vector3(0.8f, 4.5f, -1.2f));
             follow.ConfigureShakeSources(shooter, playerHealth);
             camera.fieldOfView = 58f;
         }
@@ -967,6 +986,9 @@ public static class TankiGameplayBootstrap
         controller.ConfigureMovement(TankForwardSpeed, TankReverseSpeed, TankAcceleration);
         controller.RefreshMovementPlane();
 
+        TankNitro playerNitro = EnsureComponent<TankNitro>(tank);
+        playerNitro.Configure(controller);
+
         Transform turret = FindTankTurret(tank.transform);
         turret = turret != null ? turret : tank.transform;
         bool isMaus = IsMausTank(tank.transform, turret);
@@ -989,6 +1011,7 @@ public static class TankiGameplayBootstrap
 
         TankTurretAim turretAim = EnsureComponent<TankTurretAim>(tank);
         turretAim.Configure(turret, currentCamera);
+        turretAim.ConfigureAimSettings(PlayerMouseYawSensitivity, PlayerTurretRotationSpeed);
 
         TankShooter shooter = EnsureComponent<TankShooter>(tank);
         shooter.Configure(turret, currentMissilePrefab, muzzlePoint);
@@ -996,6 +1019,14 @@ public static class TankiGameplayBootstrap
         shooter.ConfigureShotCooldown(PlayerShotCooldown);
         shooter.ConfigureDamage(TankTeam.Player, isMaus ? MausProjectileDamage : ProjectileDamage);
         shooter.ConfigureLowerProjectileHitbox(isMaus);
+
+        TankCombatRewards combatRewards = EnsureComponent<TankCombatRewards>(tank);
+        TankSpecialWeapon specialWeapon = EnsureComponent<TankSpecialWeapon>(tank);
+        specialWeapon.Configure(muzzlePoint, currentMissilePrefab, combatRewards, currentCamera);
+
+        TankAimLaser aimLaser = EnsureComponent<TankAimLaser>(tank);
+        aimLaser.enabled = true;
+        aimLaser.Configure(muzzlePoint, turret, shooter);
 
         TankAudioController tankAudio = EnsureComponent<TankAudioController>(tank);
         tankAudio.Configure(controller, shooter, muzzlePoint, LoadMovementClip(), LoadShotClip());
@@ -1009,6 +1040,7 @@ public static class TankiGameplayBootstrap
         if (currentCamera != null)
         {
             TopDownCameraFollow follow = EnsureComponent<TopDownCameraFollow>(currentCamera.gameObject);
+            follow.ConfigureTurretCamera(new Vector3(0.8f, 4.5f, -1.2f));
             follow.ConfigureShakeSources(shooter, playerHealth);
         }
     }
@@ -1360,7 +1392,10 @@ public static class TankiGameplayBootstrap
 
         foreach (Renderer renderer in renderers)
         {
-            if (renderer == null || !renderer.enabled)
+            if (renderer == null || !renderer.enabled
+                || renderer is LineRenderer
+                || renderer is TrailRenderer
+                || renderer is ParticleSystemRenderer)
             {
                 continue;
             }
@@ -1839,17 +1874,47 @@ public static class TankiGameplayBootstrap
         backgroundRect.anchorMax = new Vector2(0f, 0f);
         backgroundRect.pivot = new Vector2(0f, 0f);
         backgroundRect.anchoredPosition = new Vector2(28f, 28f);
-        backgroundRect.sizeDelta = new Vector2(360f, 24f);
-        backgroundImage.color = new Color(0f, 0f, 0f, 0.65f);
+        backgroundRect.localScale = Vector3.one;
+        backgroundImage.sprite = LoadUiSprite(HealthBarSpritePath);
+        backgroundImage.type = Image.Type.Simple;
+        backgroundImage.preserveAspect = true;
+        backgroundImage.color = Color.white;
+        backgroundImage.raycastTarget = false;
+        if (backgroundImage.sprite != null)
+        {
+            const float displayedHealthBarHeight = 240f;
+            float sourceAspect = backgroundImage.sprite.rect.width / backgroundImage.sprite.rect.height;
+            backgroundRect.sizeDelta = new Vector2(displayedHealthBarHeight * sourceAspect, displayedHealthBarHeight);
+        }
 
         RectTransform fillRect;
         Image fillImage = GetOrCreateImage(backgroundRect, "Health Bar Fill", out fillRect);
         fillRect.anchorMin = Vector2.zero;
         fillRect.anchorMax = Vector2.one;
-        fillRect.offsetMin = new Vector2(3f, 3f);
-        fillRect.offsetMax = new Vector2(-3f, -3f);
-        fillImage.type = Image.Type.Simple;
-        fillImage.color = new Color(0.15f, 0.85f, 0.15f, 1f);
+        fillRect.offsetMin = Vector2.zero;
+        fillRect.offsetMax = Vector2.zero;
+        fillImage.sprite = LoadUiSprite(HealthBarGreenSpritePath);
+        fillImage.type = Image.Type.Filled;
+        fillImage.fillMethod = Image.FillMethod.Vertical;
+        fillImage.fillOrigin = (int)Image.OriginVertical.Bottom;
+        fillImage.fillAmount = 1f;
+        fillImage.preserveAspect = true;
+        fillImage.color = Color.white;
+        fillImage.raycastTarget = false;
+
+        RectTransform boltRect;
+        Image boltImage = GetOrCreateImage(backgroundRect, "Health Bar Bolt", out boltRect);
+        boltRect.anchorMin = Vector2.zero;
+        boltRect.anchorMax = Vector2.one;
+        boltRect.offsetMin = Vector2.zero;
+        boltRect.offsetMax = Vector2.zero;
+        boltRect.localScale = Vector3.one;
+        boltImage.sprite = LoadUiSprite(HealthBarBoltSpritePath);
+        boltImage.type = Image.Type.Simple;
+        boltImage.preserveAspect = true;
+        boltImage.color = Color.white;
+        boltImage.raycastTarget = false;
+        boltRect.SetAsLastSibling();
 
         GameObject gameOverPanel = EnsureGameOverPanel(root.transform);
         Button restartButton = EnsureRestartButton(gameOverPanel.transform);
@@ -1857,12 +1922,153 @@ public static class TankiGameplayBootstrap
         EnsureHitMarker(root.transform, canvas);
         EnsureEnemyMarkers(root.transform, canvas);
         Image damageVignette = EnsureDamageVignette(root.transform);
+        EnsureNitroBar(root.transform, playerHealth.GetComponent<TankNitro>());
+        EnsureNitroSpeedEffect(root.transform, playerHealth.GetComponent<TankNitro>());
+        EnsureCombatRewardsUi(
+            root.transform,
+            playerHealth.GetComponent<TankCombatRewards>(),
+            playerHealth.GetComponent<TankSpecialWeapon>());
 
         PlayerHealthBar healthBar = EnsureComponent<PlayerHealthBar>(root);
         healthBar.Configure(playerHealth, fillImage, gameOverPanel, restartButton, gameplayCursor);
         PlayerDamageVignette vignette = EnsureComponent<PlayerDamageVignette>(root);
         vignette.Configure(playerHealth, damageVignette);
         return root;
+    }
+
+    private static void EnsureNitroBar(Transform parent, TankNitro nitro)
+    {
+        RectTransform backgroundRect;
+        Image background = GetOrCreateImage(parent, "Nitro Bar Background", out backgroundRect);
+        backgroundRect.anchorMin = new Vector2(1f, 0f);
+        backgroundRect.anchorMax = new Vector2(1f, 0f);
+        backgroundRect.pivot = new Vector2(1f, 0f);
+        backgroundRect.anchoredPosition = new Vector2(-28f, 28f);
+        // The source art is square, so scale both axes together without distortion.
+        backgroundRect.sizeDelta = new Vector2(180f, 180f);
+        background.sprite = LoadUiSprite(NitroOpacitySpritePath);
+        background.type = Image.Type.Simple;
+        // Both artwork layers use the same rect and aspect, so they align exactly.
+        background.preserveAspect = true;
+        background.color = Color.white;
+        background.raycastTarget = false;
+
+        Transform existingMask = backgroundRect.Find("Nitro Fill Mask");
+        Transform maskedFill = existingMask != null ? existingMask.Find("Nitro Fill") : null;
+        if (maskedFill != null)
+        {
+            maskedFill.SetParent(backgroundRect, false);
+        }
+
+        RectTransform fillRect;
+        Image fill = GetOrCreateImage(backgroundRect, "Nitro Fill", out fillRect);
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.pivot = new Vector2(0.5f, 0.5f);
+        fillRect.offsetMin = Vector2.zero;
+        fillRect.offsetMax = Vector2.zero;
+        fill.sprite = LoadUiSprite(NitroSpritePath);
+        fill.type = Image.Type.Filled;
+        fill.fillMethod = Image.FillMethod.Vertical;
+        fill.fillOrigin = (int)Image.OriginVertical.Bottom;
+        fill.fillAmount = 1f;
+        fill.preserveAspect = true;
+        fill.color = Color.white;
+        fill.raycastTarget = false;
+
+        NitroBarDisplay display = EnsureComponent<NitroBarDisplay>(background.gameObject);
+        display.Configure(nitro, fill);
+    }
+
+    private static void EnsureNitroSpeedEffect(Transform parent, TankNitro nitro)
+    {
+        RectTransform effectRect;
+        Image effectImage = GetOrCreateImage(parent, "Nitro Speed Effect", out effectRect);
+        effectRect.anchorMin = Vector2.zero;
+        effectRect.anchorMax = Vector2.one;
+        effectRect.pivot = new Vector2(0.5f, 0.5f);
+        effectRect.anchoredPosition = Vector2.zero;
+        effectRect.offsetMin = Vector2.zero;
+        effectRect.offsetMax = Vector2.zero;
+        effectImage.raycastTarget = false;
+        effectImage.transform.SetAsFirstSibling();
+
+        NitroSpeedVignette effect = EnsureComponent<NitroSpeedVignette>(effectImage.gameObject);
+        effect.Configure(nitro, effectImage);
+    }
+
+    private static void EnsureCombatRewardsUi(
+        Transform parent,
+        TankCombatRewards rewards,
+        TankSpecialWeapon specialWeapon)
+    {
+        RectTransform coinRect;
+        Text coinText = GetOrCreateText(parent, "Coin Counter", out coinRect);
+        coinRect.anchorMin = new Vector2(1f, 1f);
+        coinRect.anchorMax = new Vector2(1f, 1f);
+        coinRect.pivot = new Vector2(1f, 1f);
+        coinRect.anchoredPosition = new Vector2(-28f, -24f);
+        coinRect.sizeDelta = new Vector2(330f, 50f);
+        coinText.alignment = TextAnchor.MiddleRight;
+        coinText.fontSize = 30;
+        coinText.fontStyle = FontStyle.Bold;
+        coinText.color = new Color(1f, 0.82f, 0.18f, 1f);
+        coinText.raycastTarget = false;
+
+        Sprite ringSprite = CreateRingSprite();
+
+        RectTransform chargeBackgroundRect;
+        Image chargeBackground = GetOrCreateImage(parent, "Special Charge Background", out chargeBackgroundRect);
+        chargeBackgroundRect.anchorMin = new Vector2(0.5f, 0f);
+        chargeBackgroundRect.anchorMax = new Vector2(0.5f, 0f);
+        chargeBackgroundRect.pivot = new Vector2(0.5f, 0f);
+        chargeBackgroundRect.anchoredPosition = new Vector2(0f, 28f);
+        chargeBackgroundRect.sizeDelta = new Vector2(92f, 92f);
+        chargeBackground.sprite = ringSprite;
+        chargeBackground.type = Image.Type.Simple;
+        chargeBackground.color = new Color(0.03f, 0.08f, 0.12f, 0.78f);
+        chargeBackground.raycastTarget = false;
+
+        RectTransform chargeFillRect;
+        Image chargeFill = GetOrCreateImage(chargeBackgroundRect, "Special Charge Fill", out chargeFillRect);
+        chargeFillRect.anchorMin = Vector2.zero;
+        chargeFillRect.anchorMax = Vector2.one;
+        chargeFillRect.offsetMin = Vector2.zero;
+        chargeFillRect.offsetMax = Vector2.zero;
+        chargeFill.sprite = ringSprite;
+        chargeFill.type = Image.Type.Filled;
+        chargeFill.fillMethod = Image.FillMethod.Radial360;
+        chargeFill.fillOrigin = (int)Image.Origin360.Top;
+        chargeFill.fillClockwise = true;
+        chargeFill.raycastTarget = false;
+
+        RectTransform hintRect;
+        Text hint = GetOrCreateText(chargeBackgroundRect, "Q Hint", out hintRect);
+        hintRect.anchorMin = Vector2.zero;
+        hintRect.anchorMax = Vector2.one;
+        hintRect.offsetMin = Vector2.zero;
+        hintRect.offsetMax = Vector2.zero;
+        hint.text = "Q";
+        hint.alignment = TextAnchor.MiddleCenter;
+        hint.fontSize = 28;
+        hint.fontStyle = FontStyle.Bold;
+        hint.color = Color.white;
+        hint.raycastTarget = false;
+
+        RectTransform markerRect;
+        Image targetMarker = GetOrCreateImage(parent, "Special Target Marker", out markerRect);
+        markerRect.anchorMin = new Vector2(0.5f, 0.5f);
+        markerRect.anchorMax = new Vector2(0.5f, 0.5f);
+        markerRect.pivot = new Vector2(0.5f, 0.5f);
+        markerRect.sizeDelta = new Vector2(96f, 96f);
+        targetMarker.sprite = ringSprite;
+        targetMarker.type = Image.Type.Simple;
+        targetMarker.color = new Color(1f, 0.12f, 0.05f, 0.95f);
+        targetMarker.raycastTarget = false;
+        targetMarker.gameObject.SetActive(false);
+
+        CombatRewardsDisplay display = EnsureComponent<CombatRewardsDisplay>(parent.gameObject);
+        display.Configure(rewards, specialWeapon, coinText, chargeFill, targetMarker);
     }
 
     private static MainMenuController EnsureMainMenu(GameObject tank, Camera camera)
@@ -2514,6 +2720,32 @@ public static class TankiGameplayBootstrap
 
         texture.Apply();
         texture.name = "Fallback Enemy Marker";
+        return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
+    }
+
+    private static Sprite CreateRingSprite()
+    {
+        const int size = 128;
+        const float outerRadius = 61f;
+        const float innerRadius = 47f;
+        Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        texture.name = "Runtime Special Charge Ring";
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+        Vector2 center = new Vector2((size - 1) * 0.5f, (size - 1) * 0.5f);
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float distance = Vector2.Distance(new Vector2(x, y), center);
+                float outerAlpha = Mathf.Clamp01(outerRadius - distance + 1f);
+                float innerAlpha = Mathf.Clamp01(distance - innerRadius + 1f);
+                texture.SetPixel(x, y, new Color(1f, 1f, 1f, outerAlpha * innerAlpha));
+            }
+        }
+
+        texture.Apply();
         return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
     }
 

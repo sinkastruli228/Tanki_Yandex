@@ -10,6 +10,7 @@ public sealed class TankTrackDust : MonoBehaviour
     [SerializeField] private Vector3 localForwardAxis = Vector3.forward;
     [SerializeField] private ParticleSystem leftDust;
     [SerializeField] private ParticleSystem rightDust;
+    [SerializeField] private TankNitro nitro;
 
     private static Material dustMaterial;
     private static Texture2D dustTexture;
@@ -18,10 +19,12 @@ public sealed class TankTrackDust : MonoBehaviour
     private float trackSideOffset = 0.9f;
     private float trackEndOffset = 1.6f;
     private float trackHeight = 0.08f;
+    private bool tracerActive;
 
     public void Configure(TankController controller, Vector3 forwardAxis)
     {
         tankController = controller;
+        nitro = GetComponent<TankNitro>();
         localForwardAxis = TankPlaneMath.SafeLocalForwardAxis(forwardAxis);
         localRightAxis = Vector3.Cross(Vector3.up, localForwardAxis).normalized;
         if (localRightAxis.sqrMagnitude < 0.001f)
@@ -64,9 +67,16 @@ public sealed class TankTrackDust : MonoBehaviour
         float speed = tankController.CurrentSpeed;
         float speed01 = tankController.enabled ? tankController.CurrentSpeedNormalized : 0f;
         bool isMoving = Mathf.Abs(speed) > MinDustSpeed && speed01 > 0.01f;
+        bool shouldShowTracers = isMoving && nitro != null && nitro.IsBoosting;
+        if (shouldShowTracers != tracerActive)
+        {
+            tracerActive = shouldShowTracers;
+            ConfigureTracerAppearance(leftDust, tracerActive);
+            ConfigureTracerAppearance(rightDust, tracerActive);
+        }
         UpdateEmitterPositions(speed);
 
-        float rate = isMoving ? Mathf.Lerp(36f, 110f, speed01) : 0f;
+        float rate = isMoving ? Mathf.Lerp(36f, tracerActive ? 180f : 110f, speed01) : 0f;
         SetEmission(leftDust, rate);
         SetEmission(rightDust, rate);
     }
@@ -81,7 +91,7 @@ public sealed class TankTrackDust : MonoBehaviour
 
         foreach (Renderer renderer in renderers)
         {
-            if (renderer is ParticleSystemRenderer)
+            if (renderer is ParticleSystemRenderer || renderer is LineRenderer || renderer is TrailRenderer)
             {
                 continue;
             }
@@ -243,6 +253,37 @@ public sealed class TankTrackDust : MonoBehaviour
 
         ParticleSystem.EmissionModule emission = particles.emission;
         emission.rateOverTime = Mathf.Max(0f, rate);
+    }
+
+    private static void ConfigureTracerAppearance(ParticleSystem particles, bool active)
+    {
+        if (particles == null)
+        {
+            return;
+        }
+
+        ParticleSystem.MainModule main = particles.main;
+        main.startColor = active
+            ? new ParticleSystem.MinMaxGradient(new Color(0.04f, 0.45f, 1f, 0.95f), new Color(0.18f, 0.85f, 1f, 0.8f))
+            : new ParticleSystem.MinMaxGradient(new Color(0.62f, 0.54f, 0.42f, 0.72f), new Color(0.9f, 0.78f, 0.56f, 0.58f));
+
+        ParticleSystem.ColorOverLifetimeModule colorOverLifetime = particles.colorOverLifetime;
+        Gradient gradient = new Gradient();
+        gradient.SetKeys(
+            active
+                ? new[] { new GradientColorKey(new Color(0.05f, 0.4f, 1f), 0f), new GradientColorKey(new Color(0.1f, 0.8f, 1f), 1f) }
+                : new[] { new GradientColorKey(new Color(0.72f, 0.62f, 0.46f), 0f), new GradientColorKey(new Color(0.54f, 0.5f, 0.42f), 1f) },
+            new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(active ? 0.95f : 0.72f, 0.12f), new GradientAlphaKey(active ? 0.55f : 0.34f, 0.62f), new GradientAlphaKey(0f, 1f) });
+        colorOverLifetime.color = gradient;
+
+        ParticleSystem.TrailModule trails = particles.trails;
+        trails.enabled = active;
+        if (active)
+        {
+            trails.lifetime = 0.35f;
+            trails.minVertexDistance = 0.05f;
+            trails.widthOverTrail = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 0.75f), new Keyframe(1f, 0f)));
+        }
     }
 
     private static Material GetDustMaterial()

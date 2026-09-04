@@ -21,6 +21,7 @@ public sealed class TankController : MonoBehaviour
     private Rigidbody body;
     private float planeY;
     private float currentSpeed;
+    private float speedMultiplier = 1f;
     private bool useExternalInput;
     private float externalThrottle;
     private float externalTurn;
@@ -46,6 +47,11 @@ public sealed class TankController : MonoBehaviour
         forwardSpeed = Mathf.Max(0f, newForwardSpeed);
         reverseSpeed = Mathf.Max(0f, newReverseSpeed);
         acceleration = Mathf.Max(0.01f, newAcceleration);
+    }
+
+    public void SetSpeedMultiplier(float multiplier)
+    {
+        speedMultiplier = Mathf.Max(1f, multiplier);
     }
 
     public void RefreshMovementPlane()
@@ -87,7 +93,7 @@ public sealed class TankController : MonoBehaviour
         Quaternion nextRotation = WouldOverlapStaticWall(body.position, proposedRotation) ? body.rotation : proposedRotation;
         body.MoveRotation(nextRotation);
 
-        float targetSpeed = throttle >= 0f ? throttle * forwardSpeed : throttle * reverseSpeed;
+        float targetSpeed = (throttle >= 0f ? throttle * forwardSpeed : throttle * reverseSpeed) * speedMultiplier;
         currentSpeed = Mathf.MoveTowards(currentSpeed, targetSpeed, acceleration * Time.fixedDeltaTime);
 
         Vector3 movementDirection = TankPlaneMath.Flatten(nextRotation * LocalForwardAxis);

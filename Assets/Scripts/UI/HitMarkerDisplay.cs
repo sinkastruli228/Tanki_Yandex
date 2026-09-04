@@ -15,6 +15,8 @@ public sealed class HitMarkerDisplay : MonoBehaviour
     private float shownAt = -100f;
     private bool isVisible;
     private Vector3 hitWorldPoint;
+    private Color markerTint = Color.white;
+    private float markerScaleMultiplier = 1f;
 
     public void Configure(Image image, Canvas parentCanvas)
     {
@@ -51,9 +53,9 @@ public sealed class HitMarkerDisplay : MonoBehaviour
         float age = Time.unscaledTime - shownAt;
         float fadeT = Mathf.Clamp01((age - visibleHoldTime) / Mathf.Max(0.01f, fadeDuration));
         float alpha = 1f - SmoothOut(fadeT);
-        markerImage.color = new Color(1f, 1f, 1f, alpha);
+        markerImage.color = new Color(markerTint.r, markerTint.g, markerTint.b, markerTint.a * alpha);
 
-        float scale = Mathf.Lerp(startScale, endScale, SmoothOut(Mathf.Clamp01(age / (visibleHoldTime + fadeDuration))));
+        float scale = Mathf.Lerp(startScale, endScale, SmoothOut(Mathf.Clamp01(age / (visibleHoldTime + fadeDuration)))) * markerScaleMultiplier;
         markerRect.localScale = Vector3.one * scale;
 
         if (fadeT >= 1f)
@@ -63,7 +65,7 @@ public sealed class HitMarkerDisplay : MonoBehaviour
         }
     }
 
-    private void ShowAtWorldPoint(Vector3 worldPoint)
+    private void ShowAtWorldPoint(Vector3 worldPoint, bool wasFatal)
     {
         if (markerImage == null || markerRect == null)
         {
@@ -71,9 +73,12 @@ public sealed class HitMarkerDisplay : MonoBehaviour
         }
 
         hitWorldPoint = worldPoint;
+        markerTint = wasFatal ? new Color(1f, 0.12f, 0.12f, 1f) : Color.white;
+        markerScaleMultiplier = wasFatal ? 2f : 1f;
         UpdateMarkerScreenPosition();
-        markerRect.localScale = Vector3.one * startScale;
-        markerImage.color = Color.white;
+        markerRect.localScale = Vector3.one * (startScale * markerScaleMultiplier);
+        markerRect.localRotation = Quaternion.Euler(0f, 0f, Random.Range(-14f, 14f));
+        markerImage.color = markerTint;
         markerImage.gameObject.SetActive(true);
         markerImage.transform.SetAsLastSibling();
 
