@@ -39,13 +39,18 @@ public static class ImpactExplosion
         Spawn(position, 1.85f, true);
     }
 
+    public static void SpawnBombardment(Vector3 position)
+    {
+        Spawn(position, 3.05f, true);
+    }
+
     private static void Spawn(Vector3 position, float scale, bool spawnTankSmoke)
     {
         GameObject explosion = new GameObject("Stylized Impact Explosion");
         explosion.transform.position = position;
         explosion.transform.localScale = Vector3.one * scale;
 
-        PushRigidbodies(position);
+        PushRigidbodies(position, scale);
         PlayExplosionAudio(explosion.transform);
         SpawnFlashLight(explosion.transform);
         CreateShockwave(explosion.transform);
@@ -549,9 +554,11 @@ public static class ImpactExplosion
         fade.Configure(0.32f, 9.5f);
     }
 
-    private static void PushRigidbodies(Vector3 position)
+    private static void PushRigidbodies(Vector3 position, float scale)
     {
-        Collider[] colliders = Physics.OverlapSphere(position, ExplosionRadius);
+        float radius = ExplosionRadius * Mathf.Max(1f, scale * .82f);
+        float force = ExplosionForce * Mathf.Max(1f, scale * .72f);
+        Collider[] colliders = Physics.OverlapSphere(position, radius);
         foreach (Collider collider in colliders)
         {
             Rigidbody body = collider.attachedRigidbody;
@@ -565,7 +572,7 @@ public static class ImpactExplosion
                 continue;
             }
 
-            body.AddExplosionForce(ExplosionForce, position, ExplosionRadius, 0.4f, ForceMode.Impulse);
+            body.AddExplosionForce(force, position, radius, 0.4f, ForceMode.Impulse);
         }
     }
 

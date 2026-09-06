@@ -49,6 +49,7 @@ public sealed class TopDownCameraFollow : MonoBehaviour
     private Quaternion turretTransitionStartRotation;
     private bool closeCameraActive;
     private bool isFrozen;
+    private bool hasConfiguredPose;
     private Vector3 frozenPosition;
     private Quaternion frozenRotation;
 
@@ -59,6 +60,7 @@ public sealed class TopDownCameraFollow : MonoBehaviour
 
     public void Configure(Transform followTarget, Vector3 cameraOffset, Vector3 cameraLookOffset)
     {
+        hasConfiguredPose = true;
         target = followTarget;
         offset = cameraOffset;
         lookOffset = cameraLookOffset;
@@ -143,7 +145,7 @@ public sealed class TopDownCameraFollow : MonoBehaviour
 
         CacheAimTurret();
 
-        SnapToTarget();
+        if (!hasConfiguredPose) SnapToTarget();
     }
 
     private void LateUpdate()
@@ -277,6 +279,7 @@ public sealed class TopDownCameraFollow : MonoBehaviour
 
     private Vector3 GetCursorFollowOffset()
     {
+        if (PlayerHealthBar.GameplayInputBlocked) return Vector3.zero;
         Mouse mouse = Mouse.current;
         if (mouse == null || cursorFollowDistance <= 0f)
         {

@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -9,11 +10,12 @@ public sealed class TankCombatRewards : MonoBehaviour
     private const int MinimumKillCoins = 275;
     private const int MaximumKillCoinsInclusive = 325;
 
-    [SerializeField] private int coins;
     [SerializeField, Range(0f, 1f)] private float specialCharge;
     [SerializeField] private bool specialArmed;
 
-    public int Coins => coins;
+    public event Action SpecialActivationRequested;
+
+    public int Coins => TankGarageProgress.Coins;
     public float ChargeNormalized => specialCharge;
     public bool IsSpecialArmed => specialArmed;
     public bool IsFullyCharged => specialCharge >= 0.9999f;
@@ -33,19 +35,19 @@ public sealed class TankCombatRewards : MonoBehaviour
         Keyboard keyboard = Keyboard.current;
         if (keyboard != null && keyboard.tKey.wasPressedThisFrame)
         {
-            ForceArmSpecialShot();
+            ForceChargeSpecial();
             return;
         }
 
-        if (!specialArmed && IsFullyCharged && keyboard != null && keyboard.qKey.wasPressedThisFrame)
+        if (keyboard != null && keyboard.qKey.wasPressedThisFrame)
         {
-            specialArmed = true;
+            RequestSpecialActivation();
         }
     }
 
     public void RegisterKill()
     {
-        coins += Random.Range(MinimumKillCoins, MaximumKillCoinsInclusive + 1);
+        TankGarageProgress.AddCoins(UnityEngine.Random.Range(MinimumKillCoins, MaximumKillCoinsInclusive + 1));
         if (!specialArmed)
         {
             specialCharge = Mathf.Min(1f, specialCharge + ChargePerKill);
@@ -64,9 +66,38 @@ public sealed class TankCombatRewards : MonoBehaviour
         return true;
     }
 
-    public void ForceArmSpecialShot()
+    public bool RequestSpecialActivation()
+    {
+        if (specialArmed || !IsFullyCharged)
+        {
+            return false;
+        }
+
+        specialArmed = true;
+        SpecialActivationRequested?.Invoke();
+        return true;
+    }
+
+    public void CancelSpecialActivation()
+    {
+        if (!specialArmed)
+        {
+            return;
+        }
+
+        specialArmed = false;
+        specialCharge = 1f;
+    }
+
+    public void ForceChargeSpecial()
     {
         specialCharge = 1f;
-        specialArmed = true;
+        specialArmed = false;
+    }
+
+    public void ForceArmSpecialShot()
+    {
+        ForceChargeSpecial();
+        RequestSpecialActivation();
     }
 }

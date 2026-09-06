@@ -26,19 +26,6 @@ public static class TankiGameplayBootstrap
     private const string NitroSpritePath = "Assets/UI/Nitro.png";
     private const string HitMarkerSpritePath = "Assets/UI/Hit_Marker.png";
     private const string EnemyMarkerSpritePath = "Assets/UI/Enemy Marker.png";
-    private const string MenuLogoPath = "Assets/UI/Menu_UI/Logo_Menu.png";
-    private const string MenuBackgroundPath = "Assets/UI/Menu_UI/Menu_Background.PNG";
-    private const string MenuTankImagePath = "Assets/UI/Menu_UI/Menu_Tank.png";
-    private const string MenuBattleButtonPath = "Assets/UI/Menu_UI/Battle_Button.png";
-    private const string MenuInfiniteButtonPath = "Assets/UI/Menu_UI/Infinite_Button.png";
-    private const string MenuSettingsButtonPath = "Assets/UI/Menu_UI/Settings_Button.png";
-    private const string MenuExitButtonPath = "Assets/UI/Menu_UI/Exit_Button.png";
-    private const string MenuButtonsPlacePath = "Assets/UI/Menu_UI/Place_Buttons_Menu.png";
-    private const string MenuFontPath = "Assets/Font/BankGothic Md BT/bankgothicmdbt_medium.otf";
-    private const string TankCardPath = "Assets/UI/Tank_Profiles/Tank_Card.png";
-    private const string NormalTankProfilePath = "Assets/UI/Tank_Profiles/Normal_Tank.png";
-    private const string DesertTankProfilePath = "Assets/UI/Tank_Profiles/Desert_Tank.png";
-    private const string SnowTankProfilePath = "Assets/UI/Tank_Profiles/Snow_Tank.png";
     private const string RuntimeTankModelRootName = "Runtime Tank Model";
     private const string AmbientClipPath = "Assets/Sounds/Ambient.mp3";
     private const string MovementClipPath = "Assets/Sounds/Movement.mp3";
@@ -97,7 +84,7 @@ public static class TankiGameplayBootstrap
     private static Camera currentCamera;
     private static TankHealth currentPlayerHealth;
     private static GameObject currentPlayerUi;
-    private static TankSelectionMenu currentTankSelectionMenu;
+
     private static EnemyWaveAnnouncement currentWaveAnnouncement;
     private static MainMenuController currentMainMenu;
     private static bool battleStarted;
@@ -246,9 +233,12 @@ public static class TankiGameplayBootstrap
         EnsurePhysicsBoxes(persistent);
         GameObject playerUi = EnsurePlayerHealthBar(playerHealth);
         currentPlayerUi = playerUi;
-        currentTankSelectionMenu = EnsureTankSelectionMenu(tank, playerUi.transform, false);
+        Transform oldSelection = playerUi.transform.Find("Tank Selection Panel");
+        if (oldSelection != null) { oldSelection.gameObject.SetActive(false); Object.Destroy(oldSelection.gameObject); }
+        foreach (var legacy in playerUi.GetComponentsInChildren<TankSelectionMenu>(true))
+            Object.Destroy(legacy);
         currentWaveAnnouncement = EnsureWaveAnnouncement(playerUi.transform);
-        EnsureMainMenu(tank, camera);
+        if (Application.isPlaying) EnsureMainMenu(tank, camera);
         if (!battleStarted)
         {
             playerUi.SetActive(false);
@@ -296,48 +286,43 @@ public static class TankiGameplayBootstrap
         StartBattle(true);
     }
 
-    private static void StartBattle(bool infinite)
-    {
-        if (currentTank == null || currentMissilePrefab == null || currentPlayerHealth == null)
-        {
-            return;
-        }
+    private static void StartBattle(bool infinite) => currentMainMenu?.BeginBattle(infinite);
 
+    public static GameObject LoadGarageTank(int skin) => skin == 3 ? LoadMausTankPrefab() :
+        skin == 1 ? LoadDesertTankPrefab() : skin == 2 ? LoadSnowTankPrefab() : LoadTankPrefab();
+    public static Transform FindGarageTurret(Transform root) => FindTankTurret(root);
+    public static AudioClip LoadGarageShot() => LoadShotClip();
+
+    public static GameObject PrepareBattleFromGarage(int skin, bool infinite)
+    {
         battleStarted = true;
         infiniteMode = infinite;
-        SetGameplayAudioMuted(false);
         ClearRuntimeBattleObjects();
+        currentTank.SetActive(true);
+        if (skin == 3) ApplyMausTank(currentTank);
+        else if (skin == 1) ApplyDesertTankSkin(currentTank);
+        else if (skin == 2) ApplySnowTankSkin(currentTank);
+        else ApplyNormalTankSkin(currentTank);
+        SetPlayerTankControl(false);
+        PlayerHealthBar.GameplayInputBlocked = true;
         currentPlayerHealth.Configure(TankTeam.Player, GetPlayerMaxHealth(currentTank), false);
+        var follow = currentCamera.GetComponent<TopDownCameraFollow>();
+        follow.Configure(currentTank.transform, TopDownCameraFollow.DefaultOffset, TopDownCameraFollow.DefaultLookOffset);
+        follow.SetFrozen(false);
+        follow.enabled = false;
+        currentCamera.fieldOfView = 58f;
+        currentTank.GetComponent<TankController>()?.RefreshMovementPlane();
+        return currentPlayerUi;
+    }
 
-        if (currentPlayerUi != null)
-        {
-            currentPlayerUi.SetActive(true);
-        }
-
-        if (currentMainMenu != null)
-        {
-            currentMainMenu.HideMenu();
-        }
-
-        if (currentCamera != null)
-        {
-            TopDownCameraFollow follow = EnsureComponent<TopDownCameraFollow>(currentCamera.gameObject);
-            follow.enabled = true;
-            follow.Configure(currentTank.transform, TopDownCameraFollow.DefaultOffset, TopDownCameraFollow.DefaultLookOffset);
-            follow.SetFrozen(false);
-            currentCamera.fieldOfView = 58f;
-        }
-
-        TankController controller = currentTank.GetComponent<TankController>();
-        if (controller != null)
-        {
-            controller.RefreshMovementPlane();
-        }
-
-        if (currentTankSelectionMenu != null)
-        {
-            currentTankSelectionMenu.ShowSelection();
-        }
+    public static void FinishBattleFromGarage()
+    {
+        Time.timeScale = 1;
+        PlayerHealthBar.GameplayInputBlocked = false;
+        SetPlayerTankControl(true);
+        currentCamera.GetComponent<TopDownCameraFollow>().enabled = true;
+        SetGameplayAudioMuted(false);
+        StartWavesAfterTankSelection();
     }
 
     public static void StartWavesAfterTankSelection()
@@ -350,31 +335,7 @@ public static class TankiGameplayBootstrap
         EnsureEnemyWaves(currentMissilePrefab, currentPlayerHealth, currentWaveAnnouncement, false, infiniteMode);
     }
 
-    public static void ReturnToMainMenu()
-    {
-        battleStarted = false;
-        infiniteMode = false;
-        SetGameplayAudioMuted(true);
-        ClearRuntimeBattleObjects();
-
-        if (currentPlayerHealth != null)
-        {
-            currentPlayerHealth.Configure(TankTeam.Player, GetPlayerMaxHealth(currentTank), false);
-        }
-
-        SetPlayerTankControl(false);
-        PlayerHealthBar.GameplayInputBlocked = true;
-
-        if (currentPlayerUi != null)
-        {
-            currentPlayerUi.SetActive(false);
-        }
-
-        if (currentMainMenu != null)
-        {
-            currentMainMenu.ShowMenu();
-        }
-    }
+    public static void ReturnToMainMenu() => RestartGameplayScene();
 
     public static void QuitGame()
     {
@@ -401,7 +362,7 @@ public static class TankiGameplayBootstrap
         currentCamera = null;
         currentPlayerHealth = null;
         currentPlayerUi = null;
-        currentTankSelectionMenu = null;
+
         currentWaveAnnouncement = null;
         currentMainMenu = null;
         hasInitialTankPose = false;
@@ -1809,12 +1770,7 @@ public static class TankiGameplayBootstrap
         return LoadProjectAsset<AudioClip>(path);
     }
 
-    private static Font LoadMenuFont()
-    {
-        return LoadProjectAsset<Font>(MenuFontPath);
-    }
-
-    private static T LoadProjectAsset<T>(string assetPath) where T : Object
+private static T LoadProjectAsset<T>(string assetPath) where T : Object
     {
 #if UNITY_EDITOR
         T editorAsset = AssetDatabase.LoadAssetAtPath<T>(assetPath);
@@ -2002,58 +1958,130 @@ public static class TankiGameplayBootstrap
         TankCombatRewards rewards,
         TankSpecialWeapon specialWeapon)
     {
-        RectTransform coinRect;
-        Text coinText = GetOrCreateText(parent, "Coin Counter", out coinRect);
-        coinRect.anchorMin = new Vector2(1f, 1f);
-        coinRect.anchorMax = new Vector2(1f, 1f);
-        coinRect.pivot = new Vector2(1f, 1f);
-        coinRect.anchoredPosition = new Vector2(-28f, -24f);
-        coinRect.sizeDelta = new Vector2(330f, 50f);
-        coinText.alignment = TextAnchor.MiddleRight;
-        coinText.fontSize = 30;
-        coinText.fontStyle = FontStyle.Bold;
-        coinText.color = new Color(1f, 0.82f, 0.18f, 1f);
-        coinText.raycastTarget = false;
-
+        Transform oldCounter = parent.Find("Coin Counter");
+        if (oldCounter != null) { oldCounter.gameObject.SetActive(false); Object.Destroy(oldCounter.gameObject); }
         Sprite ringSprite = CreateRingSprite();
+        Sprite roundedSprite = CreateRoundedPanelSprite();
+        Color ink = new Color(.095f, .14f, .14f, .96f);
+        Color teal = new Color(.18f, .25f, .24f, 1f);
+        Color cream = new Color(.98f, .95f, .87f, 1f);
+        Color muted = new Color(.67f, .73f, .69f, 1f);
+        Color gold = new Color(.96f, .71f, .30f, 1f);
 
         RectTransform chargeBackgroundRect;
         Image chargeBackground = GetOrCreateImage(parent, "Special Charge Background", out chargeBackgroundRect);
         chargeBackgroundRect.anchorMin = new Vector2(0.5f, 0f);
         chargeBackgroundRect.anchorMax = new Vector2(0.5f, 0f);
         chargeBackgroundRect.pivot = new Vector2(0.5f, 0f);
-        chargeBackgroundRect.anchoredPosition = new Vector2(0f, 28f);
-        chargeBackgroundRect.sizeDelta = new Vector2(92f, 92f);
-        chargeBackground.sprite = ringSprite;
-        chargeBackground.type = Image.Type.Simple;
-        chargeBackground.color = new Color(0.03f, 0.08f, 0.12f, 0.78f);
+        chargeBackgroundRect.anchoredPosition = new Vector2(0f, 24f);
+        chargeBackgroundRect.sizeDelta = new Vector2(268f, 104f);
+        chargeBackground.sprite = roundedSprite;
+        chargeBackground.type = Image.Type.Sliced;
+        chargeBackground.color = ink;
         chargeBackground.raycastTarget = false;
 
+        RectTransform iconRect;
+        Image iconBackground = GetOrCreateImage(chargeBackgroundRect, "Ultimate Icon", out iconRect);
+        iconRect.anchorMin = iconRect.anchorMax = new Vector2(0f, .5f);
+        iconRect.pivot = new Vector2(0f, .5f);
+        iconRect.anchoredPosition = new Vector2(12f, 0f);
+        iconRect.sizeDelta = new Vector2(76f, 76f);
+        iconBackground.sprite = roundedSprite;
+        iconBackground.type = Image.Type.Sliced;
+        iconBackground.color = teal;
+        iconBackground.raycastTarget = false;
+
+        RectTransform numeralRect;
+        Text numeral = GetOrCreateText(iconRect, "Ultimate Numeral", out numeralRect);
+        numeralRect.anchorMin = Vector2.zero;
+        numeralRect.anchorMax = Vector2.one;
+        numeralRect.offsetMin = numeralRect.offsetMax = Vector2.zero;
+        numeral.text = "I";
+        numeral.alignment = TextAnchor.MiddleCenter;
+        numeral.fontSize = 30;
+        numeral.fontStyle = FontStyle.Bold;
+        numeral.color = gold;
+        numeral.raycastTarget = false;
+
+        RectTransform nameRect;
+        Text ultimateName = GetOrCreateText(chargeBackgroundRect, "Ultimate Name", out nameRect);
+        nameRect.anchorMin = nameRect.anchorMax = new Vector2(0f, 1f);
+        nameRect.pivot = new Vector2(0f, 1f);
+        nameRect.anchoredPosition = new Vector2(100f, -12f);
+        nameRect.sizeDelta = new Vector2(150f, 24f);
+        ultimateName.text = "РАКЕТА";
+        ultimateName.alignment = TextAnchor.MiddleLeft;
+        ultimateName.fontSize = 18;
+        ultimateName.fontStyle = FontStyle.Bold;
+        ultimateName.resizeTextForBestFit = true;
+        ultimateName.resizeTextMinSize = 11;
+        ultimateName.resizeTextMaxSize = 18;
+        ultimateName.color = cream;
+        ultimateName.raycastTarget = false;
+
+        RectTransform statusRect;
+        Text status = GetOrCreateText(chargeBackgroundRect, "Charge Status", out statusRect);
+        statusRect.anchorMin = statusRect.anchorMax = new Vector2(0f, 1f);
+        statusRect.pivot = new Vector2(0f, 1f);
+        statusRect.anchoredPosition = new Vector2(100f, -38f);
+        statusRect.sizeDelta = new Vector2(150f, 20f);
+        status.text = "ЗАРЯД  0%";
+        status.alignment = TextAnchor.MiddleLeft;
+        status.fontSize = 11;
+        status.fontStyle = FontStyle.Bold;
+        status.color = muted;
+        status.raycastTarget = false;
+
+        RectTransform trackRect;
+        Image chargeTrack = GetOrCreateImage(chargeBackgroundRect, "Charge Track", out trackRect);
+        trackRect.anchorMin = trackRect.anchorMax = new Vector2(0f, 1f);
+        trackRect.pivot = new Vector2(0f, 1f);
+        trackRect.anchoredPosition = new Vector2(100f, -68f);
+        trackRect.sizeDelta = new Vector2(110f, 16f);
+        chargeTrack.sprite = roundedSprite;
+        chargeTrack.type = Image.Type.Sliced;
+        chargeTrack.color = new Color(.23f, .31f, .29f, 1f);
+        chargeTrack.raycastTarget = false;
+
+        Transform legacyFill = chargeBackgroundRect.Find("Special Charge Fill");
+        if (legacyFill != null) legacyFill.SetParent(trackRect, false);
         RectTransform chargeFillRect;
-        Image chargeFill = GetOrCreateImage(chargeBackgroundRect, "Special Charge Fill", out chargeFillRect);
+        Image chargeFill = GetOrCreateImage(trackRect, "Special Charge Fill", out chargeFillRect);
         chargeFillRect.anchorMin = Vector2.zero;
         chargeFillRect.anchorMax = Vector2.one;
         chargeFillRect.offsetMin = Vector2.zero;
         chargeFillRect.offsetMax = Vector2.zero;
-        chargeFill.sprite = ringSprite;
+        chargeFill.sprite = roundedSprite;
         chargeFill.type = Image.Type.Filled;
-        chargeFill.fillMethod = Image.FillMethod.Radial360;
-        chargeFill.fillOrigin = (int)Image.Origin360.Top;
-        chargeFill.fillClockwise = true;
+        chargeFill.fillMethod = Image.FillMethod.Horizontal;
+        chargeFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+        chargeFill.color = gold;
         chargeFill.raycastTarget = false;
 
-        RectTransform hintRect;
-        Text hint = GetOrCreateText(chargeBackgroundRect, "Q Hint", out hintRect);
-        hintRect.anchorMin = Vector2.zero;
-        hintRect.anchorMax = Vector2.one;
-        hintRect.offsetMin = Vector2.zero;
-        hintRect.offsetMax = Vector2.zero;
-        hint.text = "Q";
-        hint.alignment = TextAnchor.MiddleCenter;
-        hint.fontSize = 28;
-        hint.fontStyle = FontStyle.Bold;
-        hint.color = Color.white;
-        hint.raycastTarget = false;
+        Transform legacyHint = chargeBackgroundRect.Find("Q Hint");
+        if (legacyHint != null) { legacyHint.gameObject.SetActive(false); Object.Destroy(legacyHint.gameObject); }
+        RectTransform shortcutRect;
+        Image shortcutBackground = GetOrCreateImage(chargeBackgroundRect, "Q Shortcut", out shortcutRect);
+        shortcutRect.anchorMin = shortcutRect.anchorMax = new Vector2(1f, 0f);
+        shortcutRect.pivot = new Vector2(1f, 0f);
+        shortcutRect.anchoredPosition = new Vector2(-12f, 12f);
+        shortcutRect.sizeDelta = new Vector2(36f, 32f);
+        shortcutBackground.sprite = roundedSprite;
+        shortcutBackground.type = Image.Type.Sliced;
+        shortcutBackground.color = teal;
+        shortcutBackground.raycastTarget = false;
+
+        RectTransform shortcutLabelRect;
+        Text shortcutLabel = GetOrCreateText(shortcutRect, "Label", out shortcutLabelRect);
+        shortcutLabelRect.anchorMin = Vector2.zero;
+        shortcutLabelRect.anchorMax = Vector2.one;
+        shortcutLabelRect.offsetMin = shortcutLabelRect.offsetMax = Vector2.zero;
+        shortcutLabel.text = "Q";
+        shortcutLabel.alignment = TextAnchor.MiddleCenter;
+        shortcutLabel.fontSize = 18;
+        shortcutLabel.fontStyle = FontStyle.Bold;
+        shortcutLabel.color = ink;
+        shortcutLabel.raycastTarget = false;
 
         RectTransform markerRect;
         Image targetMarker = GetOrCreateImage(parent, "Special Target Marker", out markerRect);
@@ -2068,351 +2096,32 @@ public static class TankiGameplayBootstrap
         targetMarker.gameObject.SetActive(false);
 
         CombatRewardsDisplay display = EnsureComponent<CombatRewardsDisplay>(parent.gameObject);
-        display.Configure(rewards, specialWeapon, coinText, chargeFill, targetMarker);
+        display.Configure(rewards, specialWeapon, null, chargeFill, targetMarker, numeral, ultimateName, status, shortcutBackground);
     }
 
     private static MainMenuController EnsureMainMenu(GameObject tank, Camera camera)
     {
-        GameObject root = GameObject.Find("Main Menu UI");
-        if (root == null)
-        {
-            root = new GameObject("Main Menu UI", typeof(RectTransform));
-        }
-
-        Canvas canvas = EnsureComponent<Canvas>(root);
+        var old = GameObject.Find("Main Menu UI");
+        if (old != null) { old.SetActive(false); Object.Destroy(old); }
+        var root = new GameObject("Garage UI", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+        var canvas = root.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 200;
-
-        CanvasScaler canvasScaler = EnsureComponent<CanvasScaler>(root);
-        canvasScaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        canvasScaler.referenceResolution = new Vector2(1280f, 720f);
-
-        EnsureComponent<GraphicRaycaster>(root);
+        var scaler = root.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1600, 900);
+        scaler.matchWidthOrHeight = 0;
         EnsureEventSystem();
-
-        Font menuFont = LoadMenuFont();
-
-        RectTransform darkRect;
-        Image darkBackground = GetOrCreateImage(root.transform, "Dark Background", out darkRect);
-        darkRect.anchorMin = Vector2.zero;
-        darkRect.anchorMax = Vector2.one;
-        darkRect.offsetMin = Vector2.zero;
-        darkRect.offsetMax = Vector2.zero;
-        darkBackground.sprite = LoadUiSprite(MenuBackgroundPath);
-        darkBackground.type = Image.Type.Simple;
-        darkBackground.preserveAspect = false;
-        darkBackground.color = Color.white;
-        darkBackground.raycastTarget = true;
-
-        RectTransform panelRect;
-        Image panelImage = GetOrCreateImage(darkRect, "Menu Panel", out panelRect);
-        panelRect.anchorMin = new Vector2(0.5f, 0.5f);
-        panelRect.anchorMax = new Vector2(0.5f, 0.5f);
-        panelRect.pivot = new Vector2(0.5f, 0.5f);
-        panelRect.anchoredPosition = Vector2.zero;
-        panelRect.sizeDelta = new Vector2(1070f, 610f);
-        AspectRatioFitter aspectRatio = panelImage.GetComponent<AspectRatioFitter>();
-        if (aspectRatio == null)
-        {
-            aspectRatio = panelImage.gameObject.AddComponent<AspectRatioFitter>();
-        }
-
-        aspectRatio.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
-        aspectRatio.aspectRatio = 16f / 9f;
-        panelImage.color = new Color(1f, 1f, 1f, 0f);
-        panelImage.raycastTarget = false;
-
-        RectTransform logoRect;
-        Image logoImage = GetOrCreateImage(panelRect, "Logo", out logoRect);
-        logoRect.anchorMin = new Vector2(0f, 1f);
-        logoRect.anchorMax = new Vector2(0f, 1f);
-        logoRect.pivot = new Vector2(0f, 1f);
-        logoRect.anchoredPosition = new Vector2(92f, -64f);
-        logoRect.sizeDelta = new Vector2(990f, 89f);
-        logoImage.sprite = LoadUiSprite(MenuLogoPath);
-        logoImage.type = Image.Type.Simple;
-        logoImage.preserveAspect = true;
-        logoImage.color = Color.white;
-        logoImage.raycastTarget = false;
-        SetImageWidthKeepingAspect(logoImage, 990f);
-
-        Text fallbackLogo = null;
-        if (logoImage.sprite == null)
-        {
-            RectTransform fallbackLogoRect;
-            fallbackLogo = GetOrCreateText(panelRect, "Logo Text Fallback", out fallbackLogoRect);
-            fallbackLogoRect.anchorMin = logoRect.anchorMin;
-            fallbackLogoRect.anchorMax = logoRect.anchorMax;
-            fallbackLogoRect.pivot = logoRect.pivot;
-            fallbackLogoRect.anchoredPosition = logoRect.anchoredPosition;
-            fallbackLogoRect.sizeDelta = logoRect.sizeDelta;
-            fallbackLogo.text = "LOGO";
-            fallbackLogo.fontSize = 82;
-            fallbackLogo.fontStyle = FontStyle.Bold;
-            fallbackLogo.alignment = TextAnchor.MiddleLeft;
-            fallbackLogo.color = Color.white;
-            ApplyMenuFont(fallbackLogo, menuFont);
-        }
-
-        RectTransform menuTankRect;
-        Image menuTankImage = GetOrCreateImage(panelRect, "Menu Tank Image", out menuTankRect);
-        menuTankRect.anchorMin = new Vector2(1f, 0.5f);
-        menuTankRect.anchorMax = new Vector2(1f, 0.5f);
-        menuTankRect.pivot = new Vector2(1f, 0.5f);
-        menuTankRect.anchoredPosition = new Vector2(-90f, -8f);
-        menuTankRect.sizeDelta = new Vector2(460f, 310f);
-        menuTankRect.localRotation = Quaternion.Euler(0f, 0f, 180f);
-        menuTankImage.sprite = LoadUiSprite(MenuTankImagePath);
-        menuTankImage.type = Image.Type.Simple;
-        menuTankImage.preserveAspect = true;
-        menuTankImage.color = Color.white;
-        menuTankImage.raycastTarget = false;
-        menuTankImage.gameObject.SetActive(false);
-
-        Transform oldPlace = panelRect.Find("Menu Buttons Place");
-        if (oldPlace != null)
-        {
-            Object.Destroy(oldPlace.gameObject);
-        }
-
-        Button battleButton = EnsureMainMenuButton(panelRect, "To Battle Button", "To Battle", new Vector2(-6f, -255f), menuFont, MenuBattleButtonPath);
-        Button infiniteButton = EnsureMainMenuButton(panelRect, "Infinite Button", "Infinite", new Vector2(-6f, -324f), menuFont, MenuInfiniteButtonPath);
-        Button settingsButton = EnsureMainMenuButton(panelRect, "Settings Button", "Settings", new Vector2(-6f, -393f), menuFont, MenuSettingsButtonPath);
-        Button exitButton = EnsureMainMenuButton(panelRect, "Exit Button", "Exit", new Vector2(-6f, -462f), menuFont, MenuExitButtonPath);
-
-        RectTransform stubRect;
-        Text settingsStub = GetOrCreateText(panelRect, "Settings Stub", out stubRect);
-        stubRect.anchorMin = new Vector2(0f, 1f);
-        stubRect.anchorMax = new Vector2(0f, 1f);
-        stubRect.pivot = new Vector2(0f, 1f);
-        stubRect.anchoredPosition = new Vector2(-6f, -531f);
-        stubRect.sizeDelta = new Vector2(520f, 34f);
-        settingsStub.text = "Settings will be added later";
-        settingsStub.fontSize = 19;
-        settingsStub.alignment = TextAnchor.MiddleLeft;
-        settingsStub.color = Color.white;
-        settingsStub.raycastTarget = false;
-        ApplyMenuFont(settingsStub, menuFont);
-        settingsStub.gameObject.SetActive(false);
-
-        MainMenuController menu = EnsureComponent<MainMenuController>(root);
-        menu.Configure(darkBackground.gameObject, battleButton, infiniteButton, settingsButton, exitButton, settingsStub, camera, tank != null ? tank.transform : null, LoadEnemyTankPrefab());
-        currentMainMenu = menu;
-        return menu;
-    }
-
-    private static Button EnsureMainMenuButton(Transform parent, string objectName, string label, Vector2 anchoredPosition, Font menuFont, string spritePath)
-    {
-        RectTransform buttonRect;
-        Image buttonImage = GetOrCreateImage(parent, objectName, out buttonRect);
-        buttonRect.anchorMin = new Vector2(0f, 1f);
-        buttonRect.anchorMax = new Vector2(0f, 1f);
-        buttonRect.pivot = new Vector2(0f, 1f);
-        buttonRect.anchoredPosition = anchoredPosition;
-        buttonRect.sizeDelta = new Vector2(760f, 68f);
-        buttonImage.sprite = LoadUiSprite(spritePath);
-        buttonImage.type = Image.Type.Simple;
-        buttonImage.preserveAspect = true;
-        buttonImage.color = Color.white;
-        buttonImage.raycastTarget = true;
-        SetImageWidthKeepingAspect(buttonImage, 760f);
-
-        Outline outline = buttonImage.GetComponent<Outline>();
-        if (outline != null)
-        {
-            Object.Destroy(outline);
-        }
-
-        Button button = EnsureComponent<Button>(buttonImage.gameObject);
-        button.transition = Selectable.Transition.None;
-        ColorBlock colors = button.colors;
-        colors.normalColor = Color.white;
-        colors.highlightedColor = new Color(1.55f, 1.55f, 1.55f, 1f);
-        colors.pressedColor = new Color(0.45f, 0.45f, 0.45f, 1f);
-        colors.selectedColor = colors.highlightedColor;
-        colors.disabledColor = new Color(0.45f, 0.45f, 0.45f, 0.7f);
-        colors.colorMultiplier = 1.35f;
-        colors.fadeDuration = 0.08f;
-        button.colors = colors;
-        MenuButtonHighlight highlight = EnsureComponent<MenuButtonHighlight>(buttonImage.gameObject);
-        highlight.Configure(buttonImage, Color.white, new Color(1f, 1f, 1f, 0.72f), new Color(0.48f, 0.48f, 0.48f, 1f));
-
-        RectTransform textRect;
-        Text buttonText = GetOrCreateText(buttonRect, "Text", out textRect);
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
-        buttonText.text = label;
-        buttonText.fontSize = 31;
-        buttonText.fontStyle = FontStyle.Bold;
-        buttonText.alignment = TextAnchor.MiddleLeft;
-        buttonText.color = Color.white;
-        buttonText.gameObject.SetActive(buttonImage.sprite == null);
-        ApplyMenuFont(buttonText, menuFont);
-        return button;
-    }
-
-    private static void SetImageWidthKeepingAspect(Image image, float width)
-    {
-        if (image == null || image.sprite == null)
-        {
-            return;
-        }
-
-        AspectRatioFitter fitter = image.GetComponent<AspectRatioFitter>();
-        if (fitter != null)
-        {
-            Object.Destroy(fitter);
-        }
-
-        Rect spriteRect = image.sprite.rect;
-        float aspect = spriteRect.height > 0f ? spriteRect.width / spriteRect.height : 1f;
-        image.rectTransform.sizeDelta = new Vector2(width, width / Mathf.Max(0.001f, aspect));
-    }
-
-    private static void ApplyMenuFont(Text text, Font menuFont)
-    {
-        if (text != null && menuFont != null)
-        {
-            text.font = menuFont;
-        }
-    }
-
-    private static TankSelectionMenu EnsureTankSelectionMenu(GameObject tank, Transform parent, bool showImmediately = true)
-    {
-        if (tank == null || parent == null)
-        {
-            return null;
-        }
-
-        RectTransform panelRect;
-        Image panelImage = GetOrCreateImage(parent, "Tank Selection Panel", out panelRect);
-        panelRect.anchorMin = Vector2.zero;
-        panelRect.anchorMax = Vector2.one;
-        panelRect.pivot = new Vector2(0.5f, 0.5f);
-        panelRect.anchoredPosition = Vector2.zero;
-        panelRect.offsetMin = Vector2.zero;
-        panelRect.offsetMax = Vector2.zero;
-        panelImage.color = new Color(0.12f, 0.12f, 0.12f, 1f);
-        panelImage.raycastTarget = true;
-
-        RectTransform titleRect;
-        Text title = GetOrCreateText(panelRect, "Tank Selection Title", out titleRect);
-        titleRect.anchorMin = new Vector2(0.5f, 0.5f);
-        titleRect.anchorMax = new Vector2(0.5f, 0.5f);
-        titleRect.pivot = new Vector2(0.5f, 0.5f);
-        titleRect.anchoredPosition = new Vector2(0f, 230f);
-        titleRect.sizeDelta = new Vector2(460f, 44f);
-        title.alignment = TextAnchor.MiddleCenter;
-        title.text = "Choose Your Tank";
-        title.fontSize = 30;
-        title.color = Color.white;
-
-        Button normalButton = EnsureTankSelectionButton(panelRect, "Normal Tank Button", "Normal", new Vector2(-410f, -35f), NormalTankProfilePath);
-        Button desertButton = EnsureTankSelectionButton(panelRect, "Desert Tank Button", "Desert", new Vector2(0f, -35f), DesertTankProfilePath);
-        Button snowButton = EnsureTankSelectionButton(panelRect, "Snow Tank Button", "Snow", new Vector2(410f, -35f), SnowTankProfilePath);
-        Button mausButton = EnsureSmallTankSelectionButton(panelRect, "Maus Test Button", "Maus Test", new Vector2(0f, -302f));
-
-        TankSelectionMenu menu = EnsureComponent<TankSelectionMenu>(parent.gameObject);
-        menu.Configure(tank, panelImage.gameObject, normalButton, desertButton, snowButton, mausButton, showImmediately);
-        return menu;
-    }
-
-    private static Button EnsureTankSelectionButton(Transform parent, string objectName, string label, Vector2 position, string tankImagePath)
-    {
-        RectTransform buttonRect;
-        Image buttonImage = GetOrCreateImage(parent, objectName, out buttonRect);
-        buttonRect.anchorMin = new Vector2(0.5f, 0.5f);
-        buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
-        buttonRect.pivot = new Vector2(0.5f, 0.5f);
-        buttonRect.anchoredPosition = position;
-        buttonRect.sizeDelta = new Vector2(340f, 453f);
-        buttonImage.sprite = LoadUiSprite(TankCardPath);
-        buttonImage.type = Image.Type.Simple;
-        buttonImage.preserveAspect = true;
-        buttonImage.color = Color.white;
-        buttonImage.raycastTarget = true;
-
-        Button button = EnsureComponent<Button>(buttonImage.gameObject);
-        button.transition = Selectable.Transition.None;
-        ColorBlock colors = button.colors;
-        colors.normalColor = Color.white;
-        colors.highlightedColor = new Color(1.18f, 1.18f, 1.18f, 1f);
-        colors.pressedColor = new Color(0.72f, 0.72f, 0.72f, 1f);
-        colors.selectedColor = colors.highlightedColor;
-        colors.colorMultiplier = 1.1f;
-        colors.fadeDuration = 0.08f;
-        button.colors = colors;
-        MenuButtonHighlight highlight = EnsureComponent<MenuButtonHighlight>(buttonImage.gameObject);
-        highlight.Configure(buttonImage, Color.white, new Color(1f, 1f, 1f, 0.72f), new Color(0.55f, 0.55f, 0.55f, 1f));
-
-        RectTransform profileRect;
-        Image profileImage = GetOrCreateImage(buttonRect, "Tank Image", out profileRect);
-        profileRect.anchorMin = new Vector2(0.5f, 1f);
-        profileRect.anchorMax = new Vector2(0.5f, 1f);
-        profileRect.pivot = new Vector2(0.5f, 1f);
-        profileRect.anchoredPosition = new Vector2(0f, -56f);
-        profileImage.sprite = LoadUiSprite(tankImagePath);
-        profileImage.type = Image.Type.Simple;
-        profileImage.preserveAspect = true;
-        profileImage.color = Color.white;
-        profileImage.raycastTarget = false;
-        SetImageWidthKeepingAspect(profileImage, 255f);
-
-        RectTransform textRect;
-        Text buttonText = GetOrCreateText(buttonRect, "Text", out textRect);
-        textRect.anchorMin = new Vector2(0.5f, 0.5f);
-        textRect.anchorMax = new Vector2(0.5f, 0.5f);
-        textRect.pivot = new Vector2(0.5f, 0.5f);
-        textRect.anchoredPosition = new Vector2(0f, -94f);
-        textRect.sizeDelta = new Vector2(280f, 68f);
-        textRect.localRotation = Quaternion.Euler(0f, 0f, 16f);
-        buttonText.alignment = TextAnchor.MiddleCenter;
-        buttonText.text = label;
-        buttonText.fontSize = 38;
-        buttonText.fontStyle = FontStyle.Bold;
-        buttonText.color = Color.white;
-
-        return button;
-    }
-
-    private static Button EnsureSmallTankSelectionButton(Transform parent, string objectName, string label, Vector2 position)
-    {
-        RectTransform buttonRect;
-        Image buttonImage = GetOrCreateImage(parent, objectName, out buttonRect);
-        buttonRect.anchorMin = new Vector2(0.5f, 0.5f);
-        buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
-        buttonRect.pivot = new Vector2(0.5f, 0.5f);
-        buttonRect.anchoredPosition = position;
-        buttonRect.sizeDelta = new Vector2(190f, 46f);
-        buttonImage.sprite = null;
-        buttonImage.type = Image.Type.Simple;
-        buttonImage.color = new Color(1f, 1f, 1f, 0.16f);
-        buttonImage.raycastTarget = true;
-
-        Button button = EnsureComponent<Button>(buttonImage.gameObject);
-        button.transition = Selectable.Transition.None;
-        MenuButtonHighlight highlight = EnsureComponent<MenuButtonHighlight>(buttonImage.gameObject);
-        highlight.Configure(buttonImage, new Color(1f, 1f, 1f, 0.16f), new Color(1f, 1f, 1f, 0.34f), new Color(1f, 1f, 1f, 0.08f));
-
-        RectTransform textRect;
-        Text buttonText = GetOrCreateText(buttonRect, "Text", out textRect);
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.pivot = new Vector2(0.5f, 0.5f);
-        textRect.anchoredPosition = Vector2.zero;
-        textRect.offsetMin = Vector2.zero;
-        textRect.offsetMax = Vector2.zero;
-        textRect.localRotation = Quaternion.identity;
-        buttonText.alignment = TextAnchor.MiddleCenter;
-        buttonText.text = label;
-        buttonText.fontSize = 20;
-        buttonText.fontStyle = FontStyle.Bold;
-        buttonText.color = Color.white;
-        buttonText.raycastTarget = false;
-
-        return button;
+        var panel = new GameObject("Garage Panel", typeof(RectTransform));
+        var rect = panel.GetComponent<RectTransform>();
+        rect.SetParent(root.transform, false);
+        rect.anchorMin = Vector2.zero; rect.anchorMax = Vector2.one;
+        rect.offsetMin = rect.offsetMax = Vector2.zero;
+        var view = panel.AddComponent<GarageMenuView>();
+        view.Build();
+        currentMainMenu = root.AddComponent<MainMenuController>();
+        currentMainMenu.Configure(view, camera, tank);
+        return currentMainMenu;
     }
 
     private static void EnsureEventSystem()
@@ -2623,7 +2332,7 @@ public static class TankiGameplayBootstrap
         titleRect.anchoredPosition = new Vector2(0f, 42f);
         titleRect.sizeDelta = new Vector2(280f, 40f);
         title.alignment = TextAnchor.MiddleCenter;
-        title.text = "GAME OVER";
+        EnsureComponent<LocalizedGameText>(title.gameObject).Configure("ПОРАЖЕНИЕ", "GAME OVER");
         title.fontSize = 28;
         title.color = Color.white;
 
@@ -2634,7 +2343,7 @@ public static class TankiGameplayBootstrap
         buttonTextRect.offsetMin = Vector2.zero;
         buttonTextRect.offsetMax = Vector2.zero;
         buttonText.alignment = TextAnchor.MiddleCenter;
-        buttonText.text = "Restart";
+        EnsureComponent<LocalizedGameText>(buttonText.gameObject).Configure("ЗАНОВО", "RESTART");
         buttonText.fontSize = 24;
         buttonText.color = Color.white;
 
@@ -2747,6 +2456,40 @@ public static class TankiGameplayBootstrap
 
         texture.Apply();
         return Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
+    }
+
+    private static Sprite CreateRoundedPanelSprite()
+    {
+        const int size = 48;
+        const float radius = 11f;
+        Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            name = "Runtime Rounded UI Panel",
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear,
+            hideFlags = HideFlags.HideAndDontSave
+        };
+
+        Color[] pixels = new Color[size * size];
+        float center = (size - 1) * .5f;
+        float straight = size * .5f - radius;
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float dx = Mathf.Max(Mathf.Abs(x - center) - straight, 0f);
+                float dy = Mathf.Max(Mathf.Abs(y - center) - straight, 0f);
+                float alpha = Mathf.Clamp01(radius - Mathf.Sqrt(dx * dx + dy * dy));
+                pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+            }
+        }
+
+        texture.SetPixels(pixels);
+        texture.Apply();
+        Sprite sprite = Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(.5f, .5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(12f, 12f, 12f, 12f));
+        sprite.name = "Runtime Rounded UI Panel";
+        sprite.hideFlags = HideFlags.HideAndDontSave;
+        return sprite;
     }
 
     private static Image GetOrCreateImage(Transform parent, string objectName, out RectTransform rectTransform)

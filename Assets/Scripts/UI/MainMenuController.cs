@@ -1,335 +1,268 @@
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using UnityEngine.UI;
-using System.Collections.Generic;
 
 [DisallowMultipleComponent]
 public sealed class MainMenuController : MonoBehaviour
 {
-    [SerializeField] private GameObject panelRoot;
-    [SerializeField] private Button toBattleButton;
-    [SerializeField] private Button infiniteButton;
-    [SerializeField] private Button settingsButton;
-    [SerializeField] private Button exitButton;
-    [SerializeField] private Text settingsStubText;
-    [SerializeField] private Camera sceneCamera;
-    [SerializeField] private Transform previewTarget;
-    [SerializeField] private GameObject enemyPreviewPrefab;
+    private GarageMenuView view;
+    private Camera sceneCamera;
+    private GameObject player, showcase;
+    private Transform turret;
+    private Quaternion turretHome, playerRotation;
+    private Vector3 parking;
+    private int skin;
+    private bool busy = true, playing;
+    private float framedAspect;
+    private AudioSource shotAudio;
+    private Material flashMaterial, smokeMaterial;
+    public int PreviewSkin => skin;
+    public bool IsBusy => busy;
 
-    private Quaternion gameplayTargetRotation;
-    private Transform previewTurret;
-    private Quaternion gameplayTurretLocalRotation;
-    private readonly List<GameObject> previewEnemies = new List<GameObject>();
-
-    private bool isMenuOpen;
-
-    public void Configure(
-        GameObject panel,
-        Button battle,
-        Button infinite,
-        Button settings,
-        Button exit,
-        Text settingsText,
-        Camera camera,
-        Transform target,
-        GameObject enemyPrefab)
+    public void Configure(GarageMenuView menu, Camera camera, GameObject tank)
     {
-        panelRoot = panel;
-        toBattleButton = battle;
-        infiniteButton = infinite;
-        settingsButton = settings;
-        exitButton = exit;
-        settingsStubText = settingsText;
-        sceneCamera = camera;
-        previewTarget = target;
-        enemyPreviewPrefab = enemyPrefab;
-        if (previewTarget != null)
-        {
-            gameplayTargetRotation = previewTarget.rotation;
-            previewTurret = TankiGameplayBootstrap.FindChildRecursive(previewTarget, "Cylinder.002")
-                ?? TankiGameplayBootstrap.FindChildRecursive(previewTarget, "cylinder.002");
-            if (previewTurret != null)
-            {
-                gameplayTurretLocalRotation = previewTurret.localRotation;
-            }
-        }
-
-        if (toBattleButton != null)
-        {
-            toBattleButton.onClick.RemoveListener(HandleToBattle);
-            toBattleButton.onClick.AddListener(HandleToBattle);
-        }
-
-        if (infiniteButton != null)
-        {
-            infiniteButton.onClick.RemoveListener(HandleInfinite);
-            infiniteButton.onClick.AddListener(HandleInfinite);
-        }
-
-        if (settingsButton != null)
-        {
-            settingsButton.onClick.RemoveListener(HandleSettings);
-            settingsButton.onClick.AddListener(HandleSettings);
-        }
-
-        if (exitButton != null)
-        {
-            exitButton.onClick.RemoveListener(HandleExit);
-            exitButton.onClick.AddListener(HandleExit);
-        }
-
-        ShowMenu();
+        view = menu; sceneCamera = camera; player = tank;
+        parking = player.transform.position; playerRotation = player.transform.rotation;
+        skin = TankGarageProgress.SelectedSkin;
+        view.Play = () => BeginBattle(false); view.Infinite = () => BeginBattle(true);
+        view.Previous = () => ChangeSkin(-1); view.Next = () => ChangeSkin(1);
+        view.Buy = () => { if (!busy && TankGarageProgress.TryBuy(skin)) Refresh(); };
+        view.Secret = () => { if (!busy) StartCoroutine(SwitchSkin(3, 1)); };
+        view.Exit = TankiGameplayBootstrap.QuitGame;
+        TankGarageProgress.Changed += Refresh;
+        AudioListener.volume = PlayerPrefs.GetInt("Tanki.AudioMuted", 0) == 1 ? 0 : 1;
+        shotAudio = gameObject.AddComponent<AudioSource>();
+        shotAudio.playOnAwake = false; shotAudio.spatialBlend = 0; shotAudio.volume = .35f;
+        sceneCamera.GetComponent<TopDownCameraFollow>().enabled = false;
+        player.SetActive(false);
+        Time.timeScale = 0; PlayerHealthBar.GameplayInputBlocked = true;
+        Cursor.visible = true; Cursor.lockState = CursorLockMode.None;
+        PlaceCamera(); Refresh();
+        StartCoroutine(OpenGarage());
     }
 
+    private void Refresh() { if (view != null) view.Refresh(skin, busy); }
     private void Update()
     {
-        if (isMenuOpen || Keyboard.current == null || !Keyboard.current.escapeKey.wasPressedThisFrame)
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
-            return;
+            if (playing) TankiGameplayBootstrap.ReturnToMainMenu();
+            else if (!busy) view.ToggleSettings();
         }
-
-        TankiGameplayBootstrap.ReturnToMainMenu();
+        if (!busy && !playing && showcase != null && Mathf.Abs(framedAspect - sceneCamera.aspect) > .01f)
+        {
+            FrameShowcase(out var position, out var rotation);
+            sceneCamera.transform.SetPositionAndRotation(position, rotation);
+        }
+        if (!busy && !playing && turret != null)
+            turret.localRotation = Quaternion.AngleAxis(Mathf.Sin(Time.unscaledTime * .65f) * 3, Vector3.up) * turretHome;
     }
-
-    public void ShowMenu()
+    private void PlaceCamera()
     {
-        isMenuOpen = true;
-        DisableMenuGameplayInput();
-        ApplyMenuTankPose();
-        EnsurePreviewEnemies();
-        if (panelRoot != null)
-        {
-            panelRoot.SetActive(true);
-        }
-
-        if (settingsStubText != null)
-        {
-            settingsStubText.gameObject.SetActive(false);
-        }
-
-        Cursor.visible = true;
-        Cursor.lockState = CursorLockMode.None;
-        Time.timeScale = 0f;
-        UpdatePreviewCamera();
+        sceneCamera.fieldOfView = 40;
+        sceneCamera.transform.position = parking + new Vector3(17, 10, -23);
+        var look = parking + Vector3.up * 1.5f;
+        var rotation = Quaternion.LookRotation(look - sceneCamera.transform.position);
+        sceneCamera.transform.rotation = Quaternion.LookRotation(look + rotation * Vector3.right * 4 - sceneCamera.transform.position);
     }
-
-    public void HideMenu()
+    private IEnumerator OpenGarage()
     {
-        isMenuOpen = false;
-        if (panelRoot != null)
+        view.TravelTo(0, true);
+        StartCoroutine(AnimateMenu(true));
+        yield return SwitchSkin(skin, 1);
+    }
+    private void ChangeSkin(int direction)
+    {
+        if (!busy) StartCoroutine(SwitchSkin((skin + direction + 3) % 3, direction));
+    }
+    private IEnumerator AnimateMenu(bool entering)
+    {
+        float duration = entering ? .35f : .42f;
+        for (float elapsed = 0; elapsed < duration; elapsed += Time.unscaledDeltaTime)
+        { view.TravelTo(elapsed / duration, entering); yield return null; }
+        view.TravelTo(1, entering);
+    }
+    private IEnumerator SwitchSkin(int next, int direction)
+    {
+        busy = true; Refresh();
+        Vector3 travel = sceneCamera.transform.right; travel.y = 0; travel.Normalize();
+        if (showcase != null)
         {
-            panelRoot.SetActive(false);
-        }
-
-        if (settingsStubText != null)
-        {
-            settingsStubText.gameObject.SetActive(false);
-        }
-
-        if (previewTarget != null)
-        {
-            previewTarget.rotation = gameplayTargetRotation;
-            Rigidbody body = previewTarget.GetComponent<Rigidbody>();
-            if (body != null)
+            Vector3 from = showcase.transform.position;
+            for (float t = 0; t < .24f; t += Time.unscaledDeltaTime)
             {
-                body.rotation = gameplayTargetRotation;
-                body.linearVelocity = Vector3.zero;
-                body.angularVelocity = Vector3.zero;
+                showcase.transform.position = from - travel * direction * 45 * Mathf.Pow(t / .24f, 2);
+                yield return null;
             }
+            Destroy(showcase);
         }
-
-        if (previewTurret != null)
+        skin = next;
+        if (skin < 3 && TankGarageProgress.Owns(skin)) TankGarageProgress.Select(skin);
+        bool first = showcase == null;
+        CreateShowcase(); Refresh();
+        Vector3 cameraFrom = sceneCamera.transform.position;
+        Quaternion rotationFrom = sceneCamera.transform.rotation;
+        FrameShowcase(out var cameraTo, out var rotationTo);
+        if (first) { cameraFrom = cameraTo; rotationFrom = rotationTo; }
+        Vector3 home = showcase.transform.position;
+        Quaternion facing = showcase.transform.rotation;
+        for (float t = 0; t < .36f; t += Time.unscaledDeltaTime)
         {
-            previewTurret.localRotation = gameplayTurretLocalRotation;
+            float u = 1 - Mathf.Pow(1 - t / .36f, 3);
+            sceneCamera.transform.position = Vector3.Lerp(cameraFrom, cameraTo, u);
+            sceneCamera.transform.rotation = Quaternion.Slerp(rotationFrom, rotationTo, u);
+            showcase.transform.position = home + travel * direction * 45 * (1 - u);
+            showcase.transform.rotation = facing * Quaternion.Euler(0, direction * 12 * (1 - u), 0);
+            if (turret != null) turret.localRotation = Quaternion.AngleAxis(direction * 28 * (1 - u), Vector3.up) * turretHome;
+            yield return null;
         }
-
-        ClearPreviewEnemies();
+        showcase.transform.SetPositionAndRotation(home, facing);
+        sceneCamera.transform.SetPositionAndRotation(cameraTo, rotationTo);
+        if (turret != null)
+        {
+            turret.localRotation = turretHome;
+            StartCoroutine(CosmeticShot(turret));
+        }
+        busy = false; Refresh();
     }
-
-    private void HandleToBattle()
+    private void CreateShowcase()
     {
-        TankiGameplayBootstrap.StartBattle();
+        var prefab = TankiGameplayBootstrap.LoadGarageTank(skin);
+        showcase = CopyVisual(prefab.transform, null).gameObject;
+        showcase.name = "Garage Showcase Tank";
+        showcase.transform.localScale = player.transform.localScale * (skin == 3 ? 1.5f : 1);
+        showcase.transform.SetPositionAndRotation(parking, playerRotation * Quaternion.Euler(0, 180, 0));
+        turret = TankiGameplayBootstrap.FindGarageTurret(showcase.transform);
+        if (turret != null) turretHome = turret.localRotation;
     }
-
-    private void HandleInfinite()
+    private void FrameShowcase(out Vector3 position, out Quaternion rotation)
     {
-        TankiGameplayBootstrap.StartInfiniteBattle();
-    }
-
-    private void HandleSettings()
-    {
-        if (settingsStubText != null)
-        {
-            settingsStubText.gameObject.SetActive(true);
-        }
-    }
-
-    private void HandleExit()
-    {
-        TankiGameplayBootstrap.QuitGame();
-    }
-
-    private void UpdatePreviewCamera()
-    {
-        if (sceneCamera == null || previewTarget == null)
-        {
-            return;
-        }
-
-        TopDownCameraFollow follow = sceneCamera.GetComponent<TopDownCameraFollow>();
-        if (follow != null)
-        {
-            follow.enabled = false;
-        }
-
-        ApplyMenuTankPose();
-        Vector3 targetPosition = previewTarget.position + new Vector3(-3.2f, 0.55f, 0f);
-        sceneCamera.transform.position = previewTarget.position + new Vector3(-19f, 13.2f, -23f);
-        sceneCamera.transform.rotation = Quaternion.LookRotation(targetPosition - sceneCamera.transform.position, Vector3.up);
-        sceneCamera.fieldOfView = 40f;
-    }
-
-    private void ApplyMenuTankPose()
-    {
-        if (previewTarget == null)
-        {
-            return;
-        }
-
-        TankiGameplayBootstrap.ApplyDesertTankSkin(previewTarget.gameObject);
-        Quaternion menuRotation = Quaternion.Euler(0f, gameplayTargetRotation.eulerAngles.y + 180f, 0f);
-        previewTarget.rotation = menuRotation;
-        if (previewTurret != null)
-        {
-            previewTurret.localRotation = gameplayTurretLocalRotation * Quaternion.Euler(0f, 30f, 0f);
-        }
-
-        Rigidbody body = previewTarget.GetComponent<Rigidbody>();
-        if (body != null)
-        {
-            body.rotation = menuRotation;
-            body.linearVelocity = Vector3.zero;
-            body.angularVelocity = Vector3.zero;
-        }
-    }
-
-    private void EnsurePreviewEnemies()
-    {
-        if (previewTarget == null || enemyPreviewPrefab == null || previewEnemies.Count > 0)
-        {
-            return;
-        }
-
-        Vector3[] offsets =
-        {
-            new Vector3(-13f, 0f, 16f),
-            new Vector3(27f, 0f, 42f)
-        };
-
-        for (int i = 0; i < offsets.Length; i++)
-        {
-            Vector3 position = previewTarget.position + offsets[i];
-            position.y = TankiGameplayBootstrap.GetGroundY(position);
-            Vector3 toPlayer = TankPlaneMath.Flatten(previewTarget.position - position);
-            Quaternion rotation = toPlayer.sqrMagnitude > 0.001f
-                ? TankPlaneMath.RotationLookingAlong(toPlayer, Vector3.forward)
-                : Quaternion.identity;
-
-            GameObject enemy = Instantiate(enemyPreviewPrefab, position, rotation);
-            enemy.name = $"Menu Preview Enemy {i + 1}";
-            AlignPreviewEnemyToGround(enemy);
-            DisablePreviewEnemyGameplay(enemy);
-            previewEnemies.Add(enemy);
-        }
-    }
-
-    private static void AlignPreviewEnemyToGround(GameObject enemy)
-    {
-        if (enemy == null)
-        {
-            return;
-        }
-
-        Renderer[] renderers = enemy.GetComponentsInChildren<Renderer>(true);
-        if (renderers.Length == 0)
-        {
-            return;
-        }
-
+        var renderers = showcase.GetComponentsInChildren<Renderer>();
         Bounds bounds = renderers[0].bounds;
-        for (int i = 1; i < renderers.Length; i++)
-        {
-            bounds.Encapsulate(renderers[i].bounds);
-        }
-
-        float groundY = TankiGameplayBootstrap.GetGroundY(enemy.transform.position);
-        Vector3 enemyPosition = enemy.transform.position;
-        enemyPosition.y += groundY - bounds.min.y;
-        enemy.transform.position = enemyPosition;
+        foreach (var renderer in renderers) bounds.Encapsulate(renderer.bounds);
+        rotation = Quaternion.LookRotation(new Vector3(-17, -10, 23));
+        Vector3 right = rotation * Vector3.right, up = rotation * Vector3.up, forward = rotation * Vector3.forward;
+        float projectedWidth = Vector3.Dot(bounds.size, new Vector3(Mathf.Abs(right.x), Mathf.Abs(right.y), Mathf.Abs(right.z)));
+        float projectedHeight = Vector3.Dot(bounds.size, new Vector3(Mathf.Abs(up.x), Mathf.Abs(up.y), Mathf.Abs(up.z)));
+        float tangent = Mathf.Tan(20 * Mathf.Deg2Rad);
+        framedAspect = sceneCamera.aspect;
+        float distance = Mathf.Max(projectedWidth / (2 * tangent * framedAspect * .51f), projectedHeight / (2 * tangent * .55f));
+        position = bounds.center - forward * distance + right * (.125f * 2 * distance * tangent * framedAspect);
     }
-
-    private static void DisablePreviewEnemyGameplay(GameObject enemy)
+    // Copy only the visual hierarchy: previews never run damage, physics or rewards.
+    private static Transform CopyVisual(Transform source, Transform parent)
     {
-        if (enemy == null)
+        var copy = new GameObject(source.name).transform;
+        copy.SetParent(parent, false);
+        copy.localPosition = source.localPosition; copy.localRotation = source.localRotation; copy.localScale = source.localScale;
+        var mesh = source.GetComponent<MeshFilter>(); var renderer = source.GetComponent<MeshRenderer>();
+        if (mesh != null && renderer != null)
         {
-            return;
+            copy.gameObject.AddComponent<MeshFilter>().sharedMesh = mesh.sharedMesh;
+            var output = copy.gameObject.AddComponent<MeshRenderer>();
+            output.sharedMaterials = renderer.sharedMaterials;
+            output.shadowCastingMode = renderer.shadowCastingMode;
         }
-
-        MonoBehaviour[] behaviours = enemy.GetComponentsInChildren<MonoBehaviour>(true);
-        foreach (MonoBehaviour behaviour in behaviours)
+        foreach (Transform child in source) CopyVisual(child, copy);
+        return copy;
+    }
+    private IEnumerator CosmeticShot(Transform shotTurret)
+    {
+        if (flashMaterial == null)
         {
-            if (behaviour != null)
+            flashMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+            flashMaterial.color = new Color(1, .66f, .18f);
+            smokeMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+            smokeMaterial.color = new Color(.73f, .67f, .53f);
+        }
+        Vector3 forward = shotTurret.forward;
+        var muzzlePoint = TankiGameplayBootstrap.CreateMuzzlePoint(shotTurret);
+        Vector3 muzzle = muzzlePoint.position;
+        Destroy(muzzlePoint.gameObject);
+        var flash = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        Destroy(flash.GetComponent<Collider>());
+        flash.name = "Garage Cosmetic Shot";
+        flash.GetComponent<Renderer>().sharedMaterial = flashMaterial;
+        flash.transform.position = muzzle;
+        var smoke = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        Destroy(smoke.GetComponent<Collider>());
+        smoke.GetComponent<Renderer>().sharedMaterial = smokeMaterial;
+        Vector3 home = shotTurret.localPosition;
+        var clip = TankiGameplayBootstrap.LoadGarageShot();
+        if (clip != null) shotAudio.PlayOneShot(clip);
+        for (float t = 0; t < .32f; t += Time.unscaledDeltaTime)
+        {
+            if (shotTurret == null) break;
+            float u = t / .32f;
+            flash.SetActive(t < .085f);
+            flash.transform.localScale = Vector3.one * Mathf.Lerp(1.2f, .1f, u);
+            smoke.transform.position = muzzle + forward * u * 1.8f + Vector3.up * u * .7f;
+            smoke.transform.localScale = Vector3.one * Mathf.Sin(u * Mathf.PI) * .85f;
+            shotTurret.localPosition = home - shotTurret.parent.InverseTransformDirection(forward) * .22f * Mathf.Sin(u * Mathf.PI);
+            yield return null;
+        }
+        if (shotTurret != null) shotTurret.localPosition = home;
+        Destroy(flash); Destroy(smoke);
+    }
+    public void BeginBattle(bool infinite)
+    {
+        if (busy || playing || (skin < 3 && !TankGarageProgress.Owns(skin))) return;
+        StartCoroutine(Launch(infinite));
+    }
+    private IEnumerator Launch(bool infinite)
+    {
+        busy = true; Refresh(); view.Group.interactable = false; view.SettingsPanel.SetActive(false);
+        yield return AnimateMenu(false);
+        Vector3 from = sceneCamera.transform.position;
+        Quaternion fromRotation = sceneCamera.transform.rotation;
+        float fromFov = sceneCamera.fieldOfView;
+        var hud = TankiGameplayBootstrap.PrepareBattleFromGarage(skin, infinite);
+        Vector3 destination = sceneCamera.transform.position;
+        Quaternion destinationRotation = sceneCamera.transform.rotation;
+        Quaternion parkedRotation = showcase.transform.rotation;
+        Destroy(showcase);
+        sceneCamera.transform.SetPositionAndRotation(from, fromRotation);
+        var pieces = new List<GarageMenuView.Travel>();
+        foreach (Transform child in hud.transform)
+        {
+            if (child.name == "Health Bar Background" || child.name == "Nitro Bar Background" || child.name == "Special Charge Background")
             {
-                behaviour.enabled = false;
+                var rect = child as RectTransform;
+                pieces.Add(new GarageMenuView.Travel { rect = rect, home = rect.anchoredPosition, side = rect.anchorMin.x >= .75f ? 1 : -1 });
             }
         }
-
-        Rigidbody[] bodies = enemy.GetComponentsInChildren<Rigidbody>(true);
-        foreach (Rigidbody body in bodies)
+        float width = ((RectTransform)hud.transform).rect.width + 350;
+        foreach (var p in pieces) p.rect.anchoredPosition = p.home + Vector2.right * p.side * width;
+        hud.SetActive(true);
+        for (float t = 0; t < 1.3f; t += Time.unscaledDeltaTime)
         {
-            body.isKinematic = true;
-            body.useGravity = false;
-            body.linearVelocity = Vector3.zero;
-            body.angularVelocity = Vector3.zero;
-        }
-    }
-
-    private void ClearPreviewEnemies()
-    {
-        foreach (GameObject enemy in previewEnemies)
-        {
-            if (enemy != null)
+            float u = GarageUiMotion.Smooth(Mathf.Clamp01(t / 1.1f));
+            sceneCamera.transform.position = Vector3.Lerp(from, destination, u) + Vector3.up * Mathf.Sin(u * Mathf.PI) * 4;
+            sceneCamera.transform.rotation = Quaternion.Slerp(fromRotation, destinationRotation, u);
+            sceneCamera.fieldOfView = Mathf.Lerp(fromFov, 58, u);
+            player.transform.rotation = Quaternion.Slerp(parkedRotation, playerRotation, u);
+            for (int i = 0; i < pieces.Count; i++)
             {
-                Destroy(enemy);
+                var p = pieces[i];
+                float h = GarageUiMotion.OutBack(Mathf.Clamp01((t - .55f - i * .045f) / .55f));
+                p.rect.anchoredPosition = Vector2.LerpUnclamped(p.home + Vector2.right * p.side * width, p.home, h);
             }
+            yield return null;
         }
-
-        previewEnemies.Clear();
+        foreach (var p in pieces) p.rect.anchoredPosition = p.home;
+        player.transform.rotation = playerRotation;
+        sceneCamera.transform.SetPositionAndRotation(destination, destinationRotation);
+        sceneCamera.fieldOfView = 58;
+        view.gameObject.SetActive(false);
+        playing = true; busy = false;
+        TankiGameplayBootstrap.FinishBattleFromGarage();
     }
-
-    private void DisableMenuGameplayInput()
+    private void OnDestroy()
     {
-        if (previewTarget == null)
-        {
-            return;
-        }
-
-        TankController controller = previewTarget.GetComponent<TankController>();
-        if (controller != null)
-        {
-            controller.enabled = false;
-        }
-
-        TankShooter shooter = previewTarget.GetComponent<TankShooter>();
-        if (shooter != null)
-        {
-            shooter.enabled = false;
-        }
-
-        TankTurretAim turretAim = previewTarget.GetComponent<TankTurretAim>();
-        if (turretAim != null)
-        {
-            turretAim.enabled = false;
-        }
+        TankGarageProgress.Changed -= Refresh;
+        if (showcase != null) Destroy(showcase);
+        if (flashMaterial != null) Destroy(flashMaterial);
+        if (smokeMaterial != null) Destroy(smokeMaterial);
     }
 }

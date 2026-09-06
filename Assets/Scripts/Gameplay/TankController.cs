@@ -25,11 +25,13 @@ public sealed class TankController : MonoBehaviour
     private bool useExternalInput;
     private float externalThrottle;
     private float externalTurn;
+    private bool movementLocked;
 
     public Vector3 LocalForwardAxis => TankPlaneMath.SafeLocalForwardAxis(localForwardAxis);
     public Vector3 ForwardOnPlane => TankPlaneMath.Flatten(transform.TransformDirection(LocalForwardAxis));
     public float CurrentSpeed => currentSpeed;
     public float CurrentSpeedNormalized => Mathf.Clamp01(Mathf.Abs(currentSpeed) / Mathf.Max(0.01f, Mathf.Max(forwardSpeed, reverseSpeed)));
+    public bool MovementLocked => movementLocked;
 
     private void Reset()
     {
@@ -73,6 +75,15 @@ public sealed class TankController : MonoBehaviour
         externalTurn = 0f;
     }
 
+    public void SetMovementLocked(bool locked)
+    {
+        movementLocked = locked;
+        if (locked)
+        {
+            currentSpeed = 0f;
+        }
+    }
+
     private void Awake()
     {
         body = GetComponent<Rigidbody>();
@@ -82,6 +93,12 @@ public sealed class TankController : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if (movementLocked)
+        {
+            currentSpeed = 0f;
+            return;
+        }
+
         float throttle = ReadThrottle();
         float turn = ReadTurn();
         if (throttle < -0.01f)

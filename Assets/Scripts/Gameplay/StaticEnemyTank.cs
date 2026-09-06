@@ -268,6 +268,14 @@ public sealed class StaticEnemyTank : MonoBehaviour
                 continue;
             }
 
+            // The shield is a valid line of fire to the protected player. Enemy
+            // projectiles still collide with its plates in ProjectileMovement.
+            TankShieldPlate shieldPlate = hitCollider.GetComponentInParent<TankShieldPlate>();
+            if (shieldPlate != null && shieldPlate.Blocks(TankTeam.Enemy))
+            {
+                continue;
+            }
+
             if (hitCollider.transform == transform || hitCollider.transform.IsChildOf(transform))
             {
                 continue;

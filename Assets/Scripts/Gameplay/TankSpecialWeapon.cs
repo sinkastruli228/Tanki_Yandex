@@ -11,20 +11,54 @@ public sealed class TankSpecialWeapon : MonoBehaviour
     [SerializeField] private float targetSelectionRadius = 90f;
 
     private TankHealth currentTarget;
+    private TankShieldUltimate shieldUltimate;
+    private TankBombardmentUltimate bombardmentUltimate;
 
     public TankHealth CurrentTarget => currentTarget;
+    public bool IsShieldActive => shieldUltimate != null && shieldUltimate.IsActive;
+    public bool IsBombardmentPlanning => bombardmentUltimate != null && bombardmentUltimate.IsPlanning;
+    public bool IsBombardmentActive => bombardmentUltimate != null && bombardmentUltimate.IsActive;
 
     public void Configure(Transform muzzle, GameObject projectile, TankCombatRewards combatRewards, Camera camera)
     {
+        if (rewards != null)
+        {
+            rewards.SpecialActivationRequested -= HandleSpecialActivationRequested;
+        }
+
         muzzlePoint = muzzle;
         projectilePrefab = projectile;
         rewards = combatRewards;
         aimCamera = camera;
+        if (rewards != null)
+        {
+            rewards.SpecialActivationRequested += HandleSpecialActivationRequested;
+        }
+
+        shieldUltimate = GetComponent<TankShieldUltimate>();
+        if (shieldUltimate == null)
+        {
+            shieldUltimate = gameObject.AddComponent<TankShieldUltimate>();
+        }
+
+        bombardmentUltimate = GetComponent<TankBombardmentUltimate>();
+        if (bombardmentUltimate == null)
+        {
+            bombardmentUltimate = gameObject.AddComponent<TankBombardmentUltimate>();
+        }
+        bombardmentUltimate.Configure(rewards, projectilePrefab, aimCamera);
     }
 
     private void Update()
     {
         if (rewards == null || !rewards.IsSpecialArmed)
+        {
+            currentTarget = null;
+            return;
+        }
+
+        if (TankUltimateLoadout.Selected == TankUltimateLoadout.ShieldSlot
+            || TankUltimateLoadout.Selected == TankUltimateLoadout.BombardmentSlot)
         {
             currentTarget = null;
             return;
@@ -38,6 +72,16 @@ public sealed class TankSpecialWeapon : MonoBehaviour
         if (rewards == null || !rewards.IsSpecialArmed)
         {
             return false;
+        }
+
+        if (TankUltimateLoadout.Selected == TankUltimateLoadout.ShieldSlot)
+        {
+            return false;
+        }
+
+        if (TankUltimateLoadout.Selected == TankUltimateLoadout.BombardmentSlot)
+        {
+            return true;
         }
 
         // Once the special shell is armed, ordinary fire is held until a target is acquired.
@@ -94,6 +138,48 @@ public sealed class TankSpecialWeapon : MonoBehaviour
 
         currentTarget = null;
         return true;
+    }
+
+    private void ActivateShield()
+    {
+        shieldUltimate = shieldUltimate != null ? shieldUltimate : GetComponent<TankShieldUltimate>();
+        if (shieldUltimate == null || shieldUltimate.IsActive)
+        {
+            return;
+        }
+
+        if (shieldUltimate.Activate())
+        {
+            rewards.ConsumeArmedShot();
+        }
+    }
+
+    private void HandleSpecialActivationRequested()
+    {
+        if (TankUltimateLoadout.Selected == TankUltimateLoadout.ShieldSlot)
+        {
+            currentTarget = null;
+            ActivateShield();
+            return;
+        }
+
+        if (TankUltimateLoadout.Selected == TankUltimateLoadout.BombardmentSlot)
+        {
+            currentTarget = null;
+            bombardmentUltimate = bombardmentUltimate != null ? bombardmentUltimate : GetComponent<TankBombardmentUltimate>();
+            if (bombardmentUltimate == null || !bombardmentUltimate.OpenPlanner())
+            {
+                rewards?.CancelSpecialActivation();
+            }
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (rewards != null)
+        {
+            rewards.SpecialActivationRequested -= HandleSpecialActivationRequested;
+        }
     }
 
     private TankHealth FindTargetUnderCursor()

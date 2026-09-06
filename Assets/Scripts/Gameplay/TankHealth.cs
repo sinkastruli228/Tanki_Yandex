@@ -8,6 +8,7 @@ public sealed class TankHealth : MonoBehaviour
     [SerializeField] private int maxHealth = 100;
     [SerializeField] private int currentHealth = 100;
     [SerializeField] private bool destroyOnDeath = true;
+    private bool damageBlocked;
 
     public event Action<TankHealth> Changed;
     public event Action<TankHealth, int> Damaged;
@@ -17,6 +18,7 @@ public sealed class TankHealth : MonoBehaviour
     public int MaxHealth => maxHealth;
     public int CurrentHealth => currentHealth;
     public bool IsAlive => currentHealth > 0;
+    public bool IsDamageBlocked => damageBlocked;
     public float Normalized => maxHealth > 0 ? Mathf.Clamp01((float)currentHealth / maxHealth) : 0f;
 
     private void Awake()
@@ -29,13 +31,14 @@ public sealed class TankHealth : MonoBehaviour
         team = newTeam;
         maxHealth = Mathf.Max(1, newMaxHealth);
         currentHealth = maxHealth;
+        damageBlocked = false;
         destroyOnDeath = shouldDestroyOnDeath;
         Changed?.Invoke(this);
     }
 
     public void TakeDamage(int damage)
     {
-        if (damage <= 0 || currentHealth <= 0)
+        if (damage <= 0 || currentHealth <= 0 || damageBlocked)
         {
             return;
         }
@@ -52,6 +55,11 @@ public sealed class TankHealth : MonoBehaviour
                 Destroy(gameObject);
             }
         }
+    }
+
+    public void SetDamageBlocked(bool blocked)
+    {
+        damageBlocked = blocked;
     }
 
     public void Heal(int amount)

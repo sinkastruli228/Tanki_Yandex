@@ -102,6 +102,11 @@ public sealed class ProjectileMovement : MonoBehaviour
             return;
         }
 
+        if (ShouldIgnoreCollider(collision.collider))
+        {
+            return;
+        }
+
         if (TryApplyDamage(collision.collider, collision.GetContact(0).point) || destroyOnCollision)
         {
             ExplodeAndDestroy(collision.GetContact(0).point);
@@ -111,6 +116,11 @@ public sealed class ProjectileMovement : MonoBehaviour
     private void OnTriggerEnter(Collider other)
     {
         if (!launched)
+        {
+            return;
+        }
+
+        if (ShouldIgnoreCollider(other))
         {
             return;
         }
@@ -139,7 +149,10 @@ public sealed class ProjectileMovement : MonoBehaviour
             return false;
         }
 
-        DamageTank(health, hitPoint);
+        if (!health.IsDamageBlocked)
+        {
+            DamageTank(health, hitPoint);
+        }
         return true;
     }
 
@@ -397,6 +410,12 @@ public sealed class ProjectileMovement : MonoBehaviour
         if (owner != null && other.transform.IsChildOf(owner.transform))
         {
             return true;
+        }
+
+        TankShieldPlate shieldPlate = other.GetComponentInParent<TankShieldPlate>();
+        if (shieldPlate != null)
+        {
+            return !shieldPlate.Blocks(ownerTeam);
         }
 
         return false;
