@@ -43,8 +43,14 @@ public sealed class TankHealth : MonoBehaviour
             return;
         }
 
+        int previousHealth = currentHealth;
         currentHealth = Mathf.Max(0, currentHealth - damage);
-        Damaged?.Invoke(this, damage);
+        int appliedDamage = previousHealth - currentHealth;
+        Damaged?.Invoke(this, appliedDamage);
+        if (team == TankTeam.Enemy)
+        {
+            EnemyDamageNumberDisplay.Show(this, appliedDamage);
+        }
         Changed?.Invoke(this);
 
         if (currentHealth == 0)

@@ -20,6 +20,8 @@ public static class ShieldUltimateChecks
     private static TankHealth health;
     private static TankController controller;
     private static TankCombatRewards rewards;
+    private static TankShooter shooter;
+    private static float stockShotCooldown;
     private static Vector3 lockedPosition;
     private static int protectedHealth;
     private static GameObject hostileProjectile;
@@ -109,6 +111,7 @@ public static class ShieldUltimateChecks
         Check(choices.Find("Ultimate 2").GetComponent<RectTransform>().rect.height >= 220f, "Ultimate choice cards use the expanded layout");
         Check(choices.Find("Ultimate 3").GetComponent<Button>().interactable && !choices.Find("Ultimate 4").GetComponent<Button>().interactable, "Bombardment is available and the future placeholder is disabled");
         Check(TankUltimateLoadout.Selected == TankUltimateLoadout.ShieldSlot, "Shield loadout is selected");
+        Check(view.Wallet != null && view.Wallet.Find("Coin") == null, "Wallet coin icon is removed");
 
         view.PlayButton.onClick.Invoke();
         stage = 1;
@@ -133,7 +136,9 @@ public static class ShieldUltimateChecks
         health = tank.GetComponent<TankHealth>();
         controller = tank.GetComponent<TankController>();
         rewards = tank.GetComponent<TankCombatRewards>();
-        Check(shield != null && health != null && controller != null && rewards != null, "Player shield dependencies are configured");
+        shooter = tank.GetComponent<TankShooter>();
+        Check(shield != null && health != null && controller != null && rewards != null && shooter != null, "Player shield dependencies are configured");
+        stockShotCooldown = shooter.ShotCooldown;
         rewards.ForceChargeSpecial();
         stage = 2;
         due = EditorApplication.timeSinceStartup + 0.35;
@@ -156,13 +161,14 @@ public static class ShieldUltimateChecks
         Check(controller.MovementLocked, "Shield locks chassis movement");
         Check(health.IsDamageBlocked, "Shield blocks player damage");
         Check(health.GetComponent<TankShooter>().enabled && health.GetComponent<TankTurretAim>().enabled, "Turret aiming and firing remain enabled");
+        Check(Mathf.Approximately(shooter.FireRateMultiplier, 5f), "Shield increases fire rate fivefold");
+        Check(Mathf.Approximately(shooter.EffectiveShotCooldown, stockShotCooldown / 5f), "Shield uses one fifth of the stock shot cooldown");
 
         protectedHealth = health.CurrentHealth;
         health.TakeDamage(25);
         Check(health.CurrentHealth == protectedHealth, "Direct damage cannot pass through the active shield");
 
         bool shotFired = false;
-        TankShooter shooter = health.GetComponent<TankShooter>();
         shooter.Shot += () => shotFired = true;
         shooter.Fire();
         Check(shotFired, "Player can fire while the shield is active");
@@ -219,6 +225,7 @@ public static class ShieldUltimateChecks
     private static void CheckShieldExpired()
     {
         Check(!shield.IsActive && !controller.MovementLocked && !health.IsDamageBlocked, "Shield expires and restores movement and damage handling");
+        Check(Mathf.Approximately(shooter.FireRateMultiplier, 1f) && Mathf.Approximately(shooter.EffectiveShotCooldown, stockShotCooldown), "Stock fire rate returns after the shield expires");
         Check(UnityEngine.Object.FindObjectsByType<TankShieldPlate>(FindObjectsSortMode.None).Length == 0, "Shield plates clean up after the effect");
         File.AppendAllText(Folder + "checks.txt", "ALL CHECKS PASSED\n");
         Debug.Log("Shield ultimate checks passed: " + Folder + "checks.txt");

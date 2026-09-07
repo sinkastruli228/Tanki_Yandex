@@ -121,7 +121,7 @@ public sealed class PlayerHealthBar : MonoBehaviour
             return;
         }
 
-        gameplayCursorImage.rectTransform.position = Mouse.current.position.ReadValue();
+        gameplayCursorImage.rectTransform.position = GameplayPointer.Position;
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.None;
     }

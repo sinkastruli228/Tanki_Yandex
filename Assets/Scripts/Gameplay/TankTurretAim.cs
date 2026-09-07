@@ -55,7 +55,7 @@ public sealed class TankTurretAim : MonoBehaviour
         }
 
         targetTurret.rotation = TankPlaneMath.RotationLookingAlong(desiredDirection, localForwardAxis);
-        Cursor.visible = true;
+        Cursor.visible = false;
         Cursor.lockState = CursorLockMode.None;
     }
 
@@ -75,7 +75,7 @@ public sealed class TankTurretAim : MonoBehaviour
             return false;
         }
 
-        Ray ray = cameraToUse.ScreenPointToRay(mouse.position.ReadValue());
+        Ray ray = cameraToUse.ScreenPointToRay(GameplayPointer.Position);
         Plane plane = new Plane(Vector3.up, new Vector3(0f, planeY, 0f));
         if (plane.Raycast(ray, out float enter))
         {

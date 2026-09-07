@@ -37,6 +37,7 @@ public sealed class MainMenuController : MonoBehaviour
         sceneCamera.GetComponent<TopDownCameraFollow>().enabled = false;
         player.SetActive(false);
         Time.timeScale = 0; PlayerHealthBar.GameplayInputBlocked = true;
+        GameplayPointer.ClearOverride();
         Cursor.visible = true; Cursor.lockState = CursorLockMode.None;
         PlaceCamera(); Refresh();
         StartCoroutine(OpenGarage());

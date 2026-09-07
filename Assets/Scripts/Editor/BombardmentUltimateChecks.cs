@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 [InitializeOnLoad]
@@ -64,8 +65,9 @@ public static class BombardmentUltimateChecks
                 case 2: OpenPlanner(); break;
                 case 3: CheckPlannerAndDraw(); break;
                 case 4: SubmitPaintedStrike(); break;
-                case 5: CheckShellsInFlight(); break;
-                case 6: CheckImpacts(); break;
+                case 5: CheckCursorRecentering(); break;
+                case 6: CheckShellsInFlight(); break;
+                case 7: CheckImpacts(); break;
             }
         }
         catch (Exception error)
@@ -137,6 +139,10 @@ public static class BombardmentUltimateChecks
         Check(bombardment.MapCamera != null && bombardment.MapCamera.orthographic, "Planner uses an orthographic map camera");
         Check(bombardment.MapTexture != null && bombardment.MapTexture.width * 3 == bombardment.MapTexture.height * 4, "Live terrain map uses a 4:3 render target");
         Check(controller.MovementLocked && !shooter.enabled && !turretAim.enabled, "Tank controls are held while drawing on the map");
+        Check(Time.timeScale == 0f, "Battle pauses while the strike zone is painted");
+        Check(bombardment.StrokeCapacity <= 83, "Available painted route is reduced by half");
+        Check(bombardment.DamagePerImpact == 100, "Bombardment impact damage is 100");
+        Check(Mathf.Approximately(bombardment.DamageRadius, 15f), "Bombardment damage radius is 15 metres");
 
         Vector3 desiredTarget = controller.transform.position + controller.ForwardOnPlane * 24f;
         Vector2 normalized = bombardment.WorldToMapNormalized(desiredTarget);
@@ -146,7 +152,7 @@ public static class BombardmentUltimateChecks
         dummy.transform.position = targetPoint + Vector3.up * .8f;
         dummy.transform.localScale = new Vector3(3f, 1.6f, 3f);
         dummyTarget = dummy.AddComponent<TankHealth>();
-        dummyTarget.Configure(TankTeam.Enemy, 60, false);
+        dummyTarget.Configure(TankTeam.Enemy, 200, false);
         bombardment.RefreshMarkersForTests();
         Check(bombardment.EnemyMarkerCount >= 1, "Enemies are shown as map markers");
 
@@ -161,19 +167,42 @@ public static class BombardmentUltimateChecks
     {
         Check(bombardment.SubmitStrike(), "Painted zone can be submitted for bombardment");
         Check(!bombardment.IsPlanning && bombardment.IsActive, "Planner closes when the strike begins");
-        Check(!controller.MovementLocked && shooter.enabled && turretAim.enabled, "Tank controls return after submitting the strike");
+        Check(controller.MovementLocked && !shooter.enabled && !turretAim.enabled && Time.timeScale == 0f, "Controls stay held while the cursor recenters");
         Check(!rewards.IsSpecialArmed && rewards.ChargeNormalized < .01f, "Ultimate charge is consumed only on submission");
         Check(bombardment.LastStrikeImpactCount >= 5, "Strike density covers even a short painted zone");
         stage = 5;
-        due = EditorApplication.timeSinceStartup + .3;
+        due = EditorApplication.timeSinceStartup + .08;
+    }
+
+    private static void CheckCursorRecentering()
+    {
+        Check(bombardment.IsRecenteringCursor, "Cursor smoothly recenters before gameplay resumes");
+        Check(Time.timeScale == 0f && PlayerHealthBar.GameplayInputBlocked, "Battle remains paused during cursor recentering");
+        stage = 6;
+        due = EditorApplication.timeSinceStartup + .38;
     }
 
     private static void CheckShellsInFlight()
     {
+        if (bombardment.IsRecenteringCursor || BombardmentShell.ActiveCount == 0)
+        {
+            due = EditorApplication.timeSinceStartup + .05;
+            return;
+        }
+        Check(Time.timeScale > 0f && !controller.MovementLocked && shooter.enabled && turretAim.enabled, "Gameplay resumes after the cursor reaches screen center");
+        if (Mouse.current != null)
+        {
+            Vector2 center = new Vector2(Screen.width * .5f, Screen.height * .5f);
+            Vector2 cursor = GameplayPointer.Position;
+            File.AppendAllText(Folder + "checks.txt", $"INFO: Gameplay cursor {cursor}, center {center}, hardware {Mouse.current.position.ReadValue()}\n");
+            Check(GameplayPointer.OverrideActive, "Gameplay uses the recentered virtual cursor");
+            Check(Vector2.Distance(cursor, center) < 24f, "Cursor finishes at the screen center");
+        }
         Check(BombardmentShell.ActiveCount > 0, "Heavy bombardment shells fly in from above");
         Check(BombardmentShell.LastLaunchedVisualScale > 1f, "Bombardment shell visual is enlarged");
+        Check(!Cursor.visible, "Only the in-game crosshair is visible during battle");
         ScreenCapture.CaptureScreenshot(Folder + "strike.png");
-        stage = 6;
+        stage = 7;
         due = EditorApplication.timeSinceStartup + .45;
     }
 
@@ -181,6 +210,13 @@ public static class BombardmentUltimateChecks
     {
         if (!impactCaptured && bombardment.ResolvedImpactCount > 0)
         {
+            Check(GameObject.Find("Bombardment Distortion Shockwave") != null, "Bombardment creates an optimized spherical shockwave");
+            AudioSource bombardmentAudio = GameObject.Find("Bombardment Explosion Audio")?.GetComponent<AudioSource>();
+            Check(bombardmentAudio != null && bombardmentAudio.spatialBlend >= .99f, "Bombardment audio remains fully spatial");
+            Check(
+                bombardmentAudio.rolloffMode == AudioRolloffMode.Custom
+                && bombardmentAudio.GetCustomCurve(AudioSourceCurveType.CustomRolloff).Evaluate(1f) >= .99f,
+                "Bombardment audio has no distance volume limit");
             ScreenCapture.CaptureScreenshot(Folder + "impact.png");
             impactCaptured = true;
             due = EditorApplication.timeSinceStartup + .2;
@@ -196,6 +232,7 @@ public static class BombardmentUltimateChecks
         if (dummyTarget != null)
             File.AppendAllText(Folder + "checks.txt", $"INFO: Area target health {dummyTarget.CurrentHealth}/{dummyTarget.MaxHealth}\n");
         Check(dummyTarget != null && dummyTarget.CurrentHealth < dummyTarget.MaxHealth, "Bombardment deals area damage to enemies");
+        Check(EnemyDamageNumberDisplay.LastShownDamage == 100, "Enemy damage popup shows the fixed bombardment damage");
         Check(!bombardment.IsActive, "Bombardment finishes and returns to normal charging");
         File.AppendAllText(Folder + "checks.txt", "ALL CHECKS PASSED\n");
         Debug.Log("Bombardment ultimate checks passed: " + Folder + "checks.txt");

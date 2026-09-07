@@ -48,14 +48,11 @@ public sealed class GarageMenuView : MonoBehaviour
             shadow.effectColor = new Color(.04f, .07f, .06f, .65f);
             shadow.effectDistance = new Vector2(0, -1.5f);
         }
-        var wallet = Rect(transform.parent, "Garage Wallet", new Vector2(1, 1), new Vector2(-56, -48), new Vector2(238, 76), new Vector2(1, 1));
+        var wallet = Rect(transform.parent, "Garage Wallet", new Vector2(1, 1), new Vector2(-56, -48), new Vector2(188, 76), new Vector2(1, 1));
         Wallet = wallet;
         Panel(wallet, ink, 0.96f);
-        var coin = Rect(wallet, "Coin", new Vector2(0, .5f), new Vector2(25, 0), new Vector2(40, 40), new Vector2(0, .5f));
-        Panel(coin, gold);
-        CenterLabel(coin, "Coin Mark", "C", 24, ink, true);
-        Label(wallet, "Currency", "МОНЕТЫ", 12, muted, new Vector2(84, -17), new Vector2(130, 18), TextAnchor.MiddleLeft);
-        CoinsLabel = Label(wallet, "Balance", "0", 29, cream, new Vector2(84, -39), new Vector2(138, 30), TextAnchor.MiddleLeft, true);
+        Label(wallet, "Currency", "МОНЕТЫ", 12, muted, new Vector2(22, -17), new Vector2(144, 18), TextAnchor.MiddleLeft);
+        CoinsLabel = Label(wallet, "Balance", "0", 29, cream, new Vector2(22, -39), new Vector2(144, 30), TextAnchor.MiddleLeft, true);
 
         var actions = Piece("Garage Actions", new Vector2(1, .5f), new Vector2(-56, -20), new Vector2(344, 384), new Vector2(1, .5f), 1);
         Panel(actions, ink, .95f);

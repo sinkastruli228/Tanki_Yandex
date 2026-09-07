@@ -12,11 +12,12 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
     private const float MapHeight = 600f;
     private const float BrushDiameter = 46f;
     private const float StampSpacing = 14f;
-    private const int MaximumStamps = 165;
+    private const int MaximumStamps = 82;
     private const int MaximumImpacts = 48;
     private const float ImpactInterval = .13f;
-    private const float BlastRadius = 13.5f;
-    private const int BlastDamage = 48;
+    private const float BlastRadius = 15f;
+    private const int BlastDamage = 100;
+    private const float CursorRecenterDuration = .32f;
 
     private static readonly Color Ink = new Color(.095f, .14f, .14f, .98f);
     private static readonly Color Teal = new Color(.18f, .25f, .24f, 1f);
@@ -67,6 +68,8 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
     private bool cameraFollowWasEnabled;
     private bool inputWasBlocked;
     private bool controlsCaptured;
+    private bool timeScaleCaptured;
+    private float timeScaleBeforePlanning = 1f;
     private bool drawing;
     private Vector2 lastDrawLocal;
     private float nextMarkerRefresh;
@@ -75,6 +78,10 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
 
     public bool IsPlanning { get; private set; }
     public bool IsActive { get; private set; }
+    public bool IsRecenteringCursor { get; private set; }
+    public int StrokeCapacity => MaximumStamps;
+    public int DamagePerImpact => BlastDamage;
+    public float DamageRadius => BlastRadius;
     public int StrokePointCount => strokeWorldPoints.Count;
     public int EnemyMarkerCount { get; private set; }
     public int ResolvedImpactCount { get; private set; }
@@ -103,11 +110,17 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
         {
             ClosePlanner(true);
         }
+        else
+        {
+            RestorePlanningControls();
+            RestorePlanningTimeScale();
+        }
         if (strikeRoutine != null)
         {
             StopCoroutine(strikeRoutine);
             strikeRoutine = null;
         }
+        IsRecenteringCursor = false;
         IsActive = false;
     }
 
@@ -199,7 +212,7 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
         LastStrikeImpactCount = impactPoints.Count;
         ResolvedImpactCount = 0;
         rewardedKills.Clear();
-        ClosePlanner(false);
+        HidePlanner();
         IsActive = true;
         strikeRoutine = StartCoroutine(RunBombardment(impactPoints));
         return true;
@@ -276,9 +289,7 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
                 continue;
             }
 
-            float falloff = Mathf.InverseLerp(effectiveRadius, 0f, distance);
-            int damage = Mathf.RoundToInt(Mathf.Lerp(BlastDamage * .45f, BlastDamage, falloff));
-            health.TakeDamage(damage);
+            health.TakeDamage(BlastDamage);
             bool fatal = !health.IsAlive;
             ProjectileMovement.NotifyTankDamaged(targetPoint, fatal);
             if (fatal && rewardedKills.Add(health.GetInstanceID()))
@@ -423,6 +434,10 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
 
     private IEnumerator RunBombardment(List<Vector3> impactPoints)
     {
+        yield return RecenterCursor();
+        RestorePlanningTimeScale();
+        RestorePlanningControls();
+
         foreach (Vector3 impactPoint in impactPoints)
         {
             SpawnShell(impactPoint);
@@ -432,6 +447,44 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
         yield return new WaitForSeconds(1.6f);
         IsActive = false;
         strikeRoutine = null;
+    }
+
+    private IEnumerator RecenterCursor()
+    {
+        IsRecenteringCursor = true;
+        Mouse mouse = Mouse.current;
+        Vector2 center = new Vector2(Screen.width * .5f, Screen.height * .5f);
+        if (mouse == null)
+        {
+            yield return new WaitForSecondsRealtime(CursorRecenterDuration);
+            IsRecenteringCursor = false;
+            yield break;
+        }
+
+        Vector2 start = mouse.position.ReadValue();
+        GameplayPointer.BeginRecentering(start);
+        float elapsed = 0f;
+        while (elapsed < CursorRecenterDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / CursorRecenterDuration);
+            float eased = 1f - Mathf.Pow(1f - t, 3f);
+            Vector2 position = Vector2.LerpUnclamped(start, center, eased);
+            GameplayPointer.SetRecenteringPosition(position);
+            mouse.WarpCursorPosition(position);
+            yield return null;
+        }
+
+        mouse.WarpCursorPosition(center);
+        GameplayPointer.SetRecenteringPosition(center);
+        for (int settleFrame = 0; settleFrame < 2; settleFrame++)
+        {
+            mouse.WarpCursorPosition(center);
+            yield return null;
+        }
+        Cursor.visible = false;
+        GameplayPointer.FinishRecentering(center);
+        IsRecenteringCursor = false;
     }
 
     private void SpawnShell(Vector3 impactPoint)
@@ -461,12 +514,18 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
 
     private void ClosePlanner(bool restoreCharge)
     {
+        HidePlanner();
+        RestorePlanningTimeScale();
+        RestorePlanningControls();
+        if (restoreCharge) rewards?.CancelSpecialActivation();
+    }
+
+    private void HidePlanner()
+    {
         IsPlanning = false;
         drawing = false;
         if (plannerCanvas != null) plannerCanvas.gameObject.SetActive(false);
         if (mapCamera != null) mapCamera.enabled = false;
-        RestorePlanningControls();
-        if (restoreCharge) rewards?.CancelSpecialActivation();
     }
 
     private void CapturePlanningControls()
@@ -482,14 +541,24 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
         cameraFollowWasEnabled = cameraFollow != null && cameraFollow.enabled;
         inputWasBlocked = PlayerHealthBar.GameplayInputBlocked;
         controlsCaptured = true;
+        timeScaleBeforePlanning = Time.timeScale;
+        timeScaleCaptured = true;
 
         controller?.SetMovementLocked(true);
         if (shooter != null) shooter.enabled = false;
         if (turretAim != null) turretAim.enabled = false;
         if (cameraFollow != null) cameraFollow.enabled = false;
         PlayerHealthBar.GameplayInputBlocked = true;
+        Time.timeScale = 0f;
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
+    }
+
+    private void RestorePlanningTimeScale()
+    {
+        if (!timeScaleCaptured) return;
+        Time.timeScale = timeScaleBeforePlanning;
+        timeScaleCaptured = false;
     }
 
     private void RestorePlanningControls()

@@ -18,6 +18,7 @@ public static class ImpactExplosion
     private static Material volumeRimMaterial;
     private static Material volumeSmokeMaterial;
     private static Material shockwaveMaterial;
+    private static Material bombardmentShockwaveMaterial;
     private static Material tracerSparkMaterial;
     private static Texture2D blobTexture;
     private static AudioClip ricochetClip;
@@ -31,29 +32,30 @@ public static class ImpactExplosion
 
     public static void Spawn(Vector3 position)
     {
-        Spawn(position, 1f, false);
+        Spawn(position, 1f, false, false);
     }
 
     public static void SpawnTankDeath(Vector3 position)
     {
-        Spawn(position, 1.85f, true);
+        Spawn(position, 1.85f, true, false);
     }
 
     public static void SpawnBombardment(Vector3 position)
     {
-        Spawn(position, 3.05f, true);
+        // The distortion sphere reaches roughly 15 world metres at this scale.
+        Spawn(position, 3.3f, true, true);
     }
 
-    private static void Spawn(Vector3 position, float scale, bool spawnTankSmoke)
+    private static void Spawn(Vector3 position, float scale, bool spawnTankSmoke, bool bombardment)
     {
         GameObject explosion = new GameObject("Stylized Impact Explosion");
         explosion.transform.position = position;
         explosion.transform.localScale = Vector3.one * scale;
 
         PushRigidbodies(position, scale);
-        PlayExplosionAudio(explosion.transform);
+        PlayExplosionAudio(explosion.transform, bombardment);
         SpawnFlashLight(explosion.transform);
-        CreateShockwave(explosion.transform);
+        CreateShockwave(explosion.transform, bombardment);
         CreateTracerSparks(explosion.transform, spawnTankSmoke ? 1.75f : 1f);
         if (ActiveStyle == ExplosionStyle.Volumetric)
         {
@@ -72,13 +74,14 @@ public static class ImpactExplosion
         Object.Destroy(explosion, spawnTankSmoke ? 3.6f : 1.4f);
     }
 
-    private static void PlayExplosionAudio(Transform parent)
+    private static void PlayExplosionAudio(Transform parent, bool bombardment)
     {
-        PlayOneShot3D(parent, "Ricochet Audio", ricochetClip, 0.2f);
-        PlayOneShot3D(parent, "Explosion Audio", explosionClip, 1.3f);
+        string prefix = bombardment ? "Bombardment " : string.Empty;
+        PlayOneShot3D(parent, prefix + "Ricochet Audio", ricochetClip, 0.2f, bombardment);
+        PlayOneShot3D(parent, prefix + "Explosion Audio", explosionClip, 1.3f, bombardment);
     }
 
-    private static void PlayOneShot3D(Transform parent, string objectName, AudioClip clip, float volume)
+    private static void PlayOneShot3D(Transform parent, string objectName, AudioClip clip, float volume, bool unlimitedDistance)
     {
         if (clip == null)
         {
@@ -93,9 +96,19 @@ public static class ImpactExplosion
         source.playOnAwake = false;
         source.loop = false;
         source.spatialBlend = 1f;
-        source.rolloffMode = AudioRolloffMode.Linear;
-        source.minDistance = 12f;
-        source.maxDistance = 210f;
+        source.minDistance = unlimitedDistance ? 1f : 12f;
+        source.maxDistance = unlimitedDistance ? 100000f : 210f;
+        if (unlimitedDistance)
+        {
+            source.rolloffMode = AudioRolloffMode.Custom;
+            source.SetCustomCurve(
+                AudioSourceCurveType.CustomRolloff,
+                AnimationCurve.Linear(0f, 1f, 1f, 1f));
+        }
+        else
+        {
+            source.rolloffMode = AudioRolloffMode.Linear;
+        }
         source.dopplerLevel = 0.05f;
         source.PlayOneShot(clip, volume);
 
@@ -141,20 +154,24 @@ public static class ImpactExplosion
         }
     }
 
-    private static void CreateShockwave(Transform parent)
+    private static void CreateShockwave(Transform parent, bool bombardment)
     {
         GameObject shockwave = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        shockwave.name = "Explosion Radial Shockwave";
+        shockwave.name = bombardment ? "Bombardment Distortion Shockwave" : "Explosion Radial Shockwave";
         shockwave.transform.SetParent(parent, false);
         shockwave.transform.localPosition = Vector3.up * 0.95f;
         shockwave.transform.localScale = Vector3.one * 0.08f;
         Object.Destroy(shockwave.GetComponent<Collider>());
 
         Renderer renderer = shockwave.GetComponent<Renderer>();
-        renderer.sharedMaterial = GetShockwaveMaterial();
+        renderer.sharedMaterial = bombardment ? GetBombardmentShockwaveMaterial() : GetShockwaveMaterial();
 
         ShockwaveSphere pulse = shockwave.AddComponent<ShockwaveSphere>();
-        pulse.Configure(renderer, 0.34f, 5.2f, new Color(1f, 0.82f, 0.3f, 0.34f));
+        pulse.Configure(
+            renderer,
+            bombardment ? 0.58f : 0.34f,
+            bombardment ? 9.1f : 5.2f,
+            bombardment ? new Color(1f, 0.76f, 0.24f, 0.42f) : new Color(1f, 0.82f, 0.3f, 0.34f));
     }
 
     private static void CreateTracerSparks(Transform parent, float lifetimeMultiplier)
@@ -648,6 +665,30 @@ public static class ImpactExplosion
         }
 
         return shockwaveMaterial;
+    }
+
+    private static Material GetBombardmentShockwaveMaterial()
+    {
+        if (bombardmentShockwaveMaterial != null)
+        {
+            return bombardmentShockwaveMaterial;
+        }
+
+        Shader shader = Shader.Find("Tanki/Bombardment Shockwave");
+        if (shader == null)
+        {
+            return GetShockwaveMaterial();
+        }
+
+        bombardmentShockwaveMaterial = new Material(shader)
+        {
+            name = "Bombardment Distortion Shockwave Material",
+            hideFlags = HideFlags.HideAndDontSave,
+            renderQueue = (int)RenderQueue.Transparent
+        };
+        bombardmentShockwaveMaterial.SetColor("_BaseColor", new Color(1f, 0.76f, 0.24f, 0.42f));
+        bombardmentShockwaveMaterial.SetFloat("_DistortionStrength", 0.018f);
+        return bombardmentShockwaveMaterial;
     }
 
     private static Material GetTracerSparkMaterial()

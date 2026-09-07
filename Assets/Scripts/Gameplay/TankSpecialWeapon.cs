@@ -191,7 +191,7 @@ public sealed class TankSpecialWeapon : MonoBehaviour
             return null;
         }
 
-        Vector2 cursorPosition = mouse.position.ReadValue();
+        Vector2 cursorPosition = GameplayPointer.Position;
         float bestDistanceSqr = targetSelectionRadius * targetSelectionRadius;
         TankHealth bestTarget = null;
         TankHealth[] tanks = FindObjectsByType<TankHealth>(FindObjectsInactive.Exclude);

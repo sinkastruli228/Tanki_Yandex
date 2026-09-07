@@ -20,10 +20,13 @@ public sealed class TankShooter : MonoBehaviour
     public event Action Shot;
 
     private float lastShotTime = -999f;
+    private float fireRateMultiplier = 1f;
     private TankSpecialWeapon specialWeapon;
 
     public float ShotCooldown => shotCooldown;
-    public float ReloadNormalized => shotCooldown <= 0f ? 1f : Mathf.Clamp01((Time.time - lastShotTime) / shotCooldown);
+    public float FireRateMultiplier => fireRateMultiplier;
+    public float EffectiveShotCooldown => fireRateMultiplier <= 0f ? shotCooldown : shotCooldown / fireRateMultiplier;
+    public float ReloadNormalized => EffectiveShotCooldown <= 0f ? 1f : Mathf.Clamp01((Time.time - lastShotTime) / EffectiveShotCooldown);
 
     public void Configure(Transform turretTransform, GameObject projectilePrefabOverride, Transform muzzleTransform)
     {
@@ -42,6 +45,11 @@ public sealed class TankShooter : MonoBehaviour
     public void ConfigureShotCooldown(float newShotCooldown)
     {
         shotCooldown = Mathf.Max(0f, newShotCooldown);
+    }
+
+    public void SetFireRateMultiplier(float multiplier)
+    {
+        fireRateMultiplier = Mathf.Max(0.01f, multiplier);
     }
 
     public void ConfigureDamage(TankTeam team, int damageAmount)
@@ -78,7 +86,7 @@ public sealed class TankShooter : MonoBehaviour
 
     public void Fire()
     {
-        if (projectilePrefab == null || Time.time < lastShotTime + shotCooldown)
+        if (projectilePrefab == null || Time.time < lastShotTime + EffectiveShotCooldown)
         {
             return;
         }
@@ -119,6 +127,7 @@ public sealed class TankShooter : MonoBehaviour
         fallbackMuzzleDistance = Mathf.Max(0f, fallbackMuzzleDistance);
         projectileSpeed = Mathf.Max(0f, projectileSpeed);
         shotCooldown = Mathf.Max(0f, shotCooldown);
+        fireRateMultiplier = Mathf.Max(0.01f, fireRateMultiplier);
         damage = Mathf.Max(0, damage);
     }
 

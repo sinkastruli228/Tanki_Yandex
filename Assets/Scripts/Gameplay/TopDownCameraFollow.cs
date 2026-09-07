@@ -286,7 +286,7 @@ public sealed class TopDownCameraFollow : MonoBehaviour
             return Vector3.zero;
         }
 
-        Ray ray = GetComponent<Camera>().ScreenPointToRay(mouse.position.ReadValue());
+        Ray ray = GetComponent<Camera>().ScreenPointToRay(GameplayPointer.Position);
         Plane movementPlane = new Plane(Vector3.up, target.position);
         if (!movementPlane.Raycast(ray, out float enter))
         {

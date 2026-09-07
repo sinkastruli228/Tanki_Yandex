@@ -23,6 +23,7 @@ public sealed class TankShieldUltimate : MonoBehaviour
     private readonly List<Transform> plates = new List<Transform>(PlateCount);
     private TankController controller;
     private TankHealth health;
+    private TankShooter shooter;
     private GameObject shieldRoot;
     private Coroutine routine;
 
@@ -48,10 +49,12 @@ public sealed class TankShieldUltimate : MonoBehaviour
 
         controller = GetComponent<TankController>();
         health = GetComponent<TankHealth>();
+        shooter = GetComponent<TankShooter>();
         IsActive = true;
         ActivePlateCount = 0;
         controller?.SetMovementLocked(true);
         health?.SetDamageBlocked(true);
+        shooter?.SetFireRateMultiplier(5f);
         routine = StartCoroutine(RunShield());
         return true;
     }
@@ -343,6 +346,7 @@ public sealed class TankShieldUltimate : MonoBehaviour
         ActivePlateCount = 0;
         controller?.SetMovementLocked(false);
         health?.SetDamageBlocked(false);
+        shooter?.SetFireRateMultiplier(1f);
         IsActive = false;
     }
 }
