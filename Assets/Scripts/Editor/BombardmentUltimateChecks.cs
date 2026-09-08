@@ -140,9 +140,15 @@ public static class BombardmentUltimateChecks
         Check(bombardment.MapTexture != null && bombardment.MapTexture.width * 3 == bombardment.MapTexture.height * 4, "Live terrain map uses a 4:3 render target");
         Check(controller.MovementLocked && !shooter.enabled && !turretAim.enabled, "Tank controls are held while drawing on the map");
         Check(Time.timeScale == 0f, "Battle pauses while the strike zone is painted");
-        Check(bombardment.StrokeCapacity <= 83, "Available painted route is reduced by half");
+        Check(bombardment.StrokeCapacity == 41, "Available painted route is halved again");
         Check(bombardment.DamagePerImpact == 100, "Bombardment impact damage is 100");
-        Check(Mathf.Approximately(bombardment.DamageRadius, 15f), "Bombardment damage radius is 15 metres");
+        Check(Mathf.Approximately(bombardment.DamageRadius, 10.5f), "Bombardment damage radius is reduced by 30 percent");
+        Check(bombardment.PlannerRoot.transform.Find("Bombardment Console/Hint") == null, "Planner instruction caption is removed");
+        Check(bombardment.PlannerRoot.transform.Find("Bombardment Console/Route Status/Ink Hint") == null, "Route helper caption is removed");
+        Check(bombardment.PlannerRoot.transform.Find("Bombardment Console/Live Dot") != null, "LIVE badge uses a blinking red dot");
+        Image inkFill = bombardment.PlannerRoot.transform.Find("Bombardment Console/Route Status/Ink Track/Ink Fill").GetComponent<Image>();
+        Check(inkFill.type == Image.Type.Simple && inkFill.sprite.name.Contains("Brush"), "Route limit uses an unclipped vertical brush stroke");
+        Check(inkFill.rectTransform.rect.height < inkFill.rectTransform.parent.GetComponent<RectTransform>().rect.height - 12f, "Route fill keeps safe space at both track edges");
 
         Vector3 desiredTarget = controller.transform.position + controller.ForwardOnPlane * 24f;
         Vector2 normalized = bombardment.WorldToMapNormalized(desiredTarget);
@@ -232,7 +238,13 @@ public static class BombardmentUltimateChecks
         if (dummyTarget != null)
             File.AppendAllText(Folder + "checks.txt", $"INFO: Area target health {dummyTarget.CurrentHealth}/{dummyTarget.MaxHealth}\n");
         Check(dummyTarget != null && dummyTarget.CurrentHealth < dummyTarget.MaxHealth, "Bombardment deals area damage to enemies");
-        Check(EnemyDamageNumberDisplay.LastShownDamage == 100, "Enemy damage popup shows the fixed bombardment damage");
+        Color popupColor = EnemyDamageNumberDisplay.LastShownColor;
+        Check(
+            !EnemyDamageNumberDisplay.LastShownCritical
+            && popupColor.r >= .9f
+            && popupColor.g >= .9f
+            && popupColor.b >= .75f,
+            "Bombardment damage popup uses the normal white color");
         Check(!bombardment.IsActive, "Bombardment finishes and returns to normal charging");
         File.AppendAllText(Folder + "checks.txt", "ALL CHECKS PASSED\n");
         Debug.Log("Bombardment ultimate checks passed: " + Folder + "checks.txt");

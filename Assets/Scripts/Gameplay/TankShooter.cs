@@ -5,6 +5,12 @@ using UnityEngine.InputSystem;
 [DisallowMultipleComponent]
 public sealed class TankShooter : MonoBehaviour
 {
+    private const int PlayerNormalDamageMin = 18;
+    private const int PlayerNormalDamageMaxInclusive = 28;
+    private const int PlayerCriticalDamageMin = 38;
+    private const int PlayerCriticalDamageMaxInclusive = 50;
+    private const float PlayerCriticalChance = .15f;
+
     [SerializeField] private Transform turret;
     [SerializeField] private Transform muzzlePoint;
     [SerializeField] private GameObject projectilePrefab;
@@ -21,12 +27,17 @@ public sealed class TankShooter : MonoBehaviour
 
     private float lastShotTime = -999f;
     private float fireRateMultiplier = 1f;
+    private float battleUpgradeMultiplier = 1f;
     private TankSpecialWeapon specialWeapon;
 
     public float ShotCooldown => shotCooldown;
     public float FireRateMultiplier => fireRateMultiplier;
-    public float EffectiveShotCooldown => fireRateMultiplier <= 0f ? shotCooldown : shotCooldown / fireRateMultiplier;
+    public float BattleUpgradeMultiplier => battleUpgradeMultiplier;
+    public float EffectiveProjectileSpeed => projectileSpeed;
+    public float EffectiveShotCooldown => shotCooldown / Mathf.Max(.01f, fireRateMultiplier);
     public float ReloadNormalized => EffectiveShotCooldown <= 0f ? 1f : Mathf.Clamp01((Time.time - lastShotTime) / EffectiveShotCooldown);
+    public int LastShotDamage { get; private set; }
+    public bool LastShotWasCritical { get; private set; }
 
     public void Configure(Transform turretTransform, GameObject projectilePrefabOverride, Transform muzzleTransform)
     {
@@ -52,6 +63,11 @@ public sealed class TankShooter : MonoBehaviour
         fireRateMultiplier = Mathf.Max(0.01f, multiplier);
     }
 
+    public void SetBattleUpgradeMultiplier(float multiplier)
+    {
+        battleUpgradeMultiplier = Mathf.Max(1f, multiplier);
+    }
+
     public void ConfigureDamage(TankTeam team, int damageAmount)
     {
         ownerTeam = team;
@@ -72,7 +88,7 @@ public sealed class TankShooter : MonoBehaviour
     private void Update()
     {
         Mouse mouse = Mouse.current;
-        if (mouse != null && mouse.leftButton.wasPressedThisFrame)
+        if (mouse != null && mouse.leftButton.isPressed)
         {
             specialWeapon = specialWeapon != null ? specialWeapon : GetComponent<TankSpecialWeapon>();
             if (specialWeapon != null && specialWeapon.TryHandleFire())
@@ -106,9 +122,12 @@ public sealed class TankShooter : MonoBehaviour
             projectileMovement = projectile.AddComponent<ProjectileMovement>();
         }
 
-        projectileMovement.ConfigureDamage(ownerTeam, damage, gameObject);
+        int shotDamage = RollShotDamage(out bool critical);
+        LastShotDamage = shotDamage;
+        LastShotWasCritical = critical;
+        projectileMovement.ConfigureDamage(ownerTeam, shotDamage, gameObject, critical);
         projectileMovement.ConfigureLowerHitbox(useLowerProjectileHitbox);
-        projectileMovement.Launch(direction, projectileSpeed, projectileForwardAxis);
+        projectileMovement.Launch(direction, EffectiveProjectileSpeed, projectileForwardAxis);
         IgnoreTankCollisions(projectile);
         lastShotTime = Time.time;
         Shot?.Invoke();
@@ -120,6 +139,21 @@ public sealed class TankShooter : MonoBehaviour
         Shot?.Invoke();
     }
 
+    private int RollShotDamage(out bool critical)
+    {
+        if (ownerTeam != TankTeam.Player)
+        {
+            critical = false;
+            return damage;
+        }
+
+        critical = UnityEngine.Random.value < PlayerCriticalChance;
+        int rolled = critical
+            ? UnityEngine.Random.Range(PlayerCriticalDamageMin, PlayerCriticalDamageMaxInclusive + 1)
+            : UnityEngine.Random.Range(PlayerNormalDamageMin, PlayerNormalDamageMaxInclusive + 1);
+        return Mathf.Max(1, Mathf.RoundToInt(rolled * battleUpgradeMultiplier));
+    }
+
     private void OnValidate()
     {
         launchForwardAxis = TankPlaneMath.SafeLocalForwardAxis(launchForwardAxis);
@@ -128,6 +162,7 @@ public sealed class TankShooter : MonoBehaviour
         projectileSpeed = Mathf.Max(0f, projectileSpeed);
         shotCooldown = Mathf.Max(0f, shotCooldown);
         fireRateMultiplier = Mathf.Max(0.01f, fireRateMultiplier);
+        battleUpgradeMultiplier = Mathf.Max(1f, battleUpgradeMultiplier);
         damage = Mathf.Max(0, damage);
     }
 

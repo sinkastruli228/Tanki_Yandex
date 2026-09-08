@@ -19,11 +19,6 @@ public static class TankiGameplayBootstrap
     private const string MissilePrefabPath = "Assets/Models/Missle/Missile.prefab";
     private const string BoxPrefabPath = "Assets/Models/Box/Box.prefab";
     private const string ScopeSpritePath = "Assets/UI/Scope.png";
-    private const string HealthBarSpritePath = "Assets/UI/Health_Bar.png";
-    private const string HealthBarGreenSpritePath = "Assets/UI/Health_Bar_Green.png";
-    private const string HealthBarBoltSpritePath = "Assets/UI/Health_Bar_Bolt.png";
-    private const string NitroOpacitySpritePath = "Assets/UI/Nitro_Opacity.png";
-    private const string NitroSpritePath = "Assets/UI/Nitro.png";
     private const string HitMarkerSpritePath = "Assets/UI/Hit_Marker.png";
     private const string EnemyMarkerSpritePath = "Assets/UI/Enemy Marker.png";
     private const string RuntimeTankModelRootName = "Runtime Tank Model";
@@ -89,6 +84,10 @@ public static class TankiGameplayBootstrap
     private static MainMenuController currentMainMenu;
     private static bool battleStarted;
     private static bool infiniteMode;
+    private static bool restartBattleAfterReload;
+    private static bool restartInfiniteMode;
+    private static int currentBattleSkin;
+    private static int restartBattleSkin;
     private static bool hasInitialTankPose;
     private static Vector3 initialTankPosition;
     private static Quaternion initialTankRotation;
@@ -297,6 +296,7 @@ public static class TankiGameplayBootstrap
     {
         battleStarted = true;
         infiniteMode = infinite;
+        currentBattleSkin = skin;
         ClearRuntimeBattleObjects();
         currentTank.SetActive(true);
         if (skin == 3) ApplyMausTank(currentTank);
@@ -335,7 +335,19 @@ public static class TankiGameplayBootstrap
         EnsureEnemyWaves(currentMissilePrefab, currentPlayerHealth, currentWaveAnnouncement, false, infiniteMode);
     }
 
-    public static void ReturnToMainMenu() => RestartGameplayScene();
+    public static void ReturnToMainMenu()
+    {
+        restartBattleAfterReload = false;
+        ReloadGameplayScene();
+    }
+
+    public static void RestartCurrentBattle()
+    {
+        restartBattleSkin = currentBattleSkin;
+        restartInfiniteMode = infiniteMode;
+        restartBattleAfterReload = true;
+        ReloadGameplayScene();
+    }
 
     public static void QuitGame()
     {
@@ -347,7 +359,9 @@ public static class TankiGameplayBootstrap
 #endif
     }
 
-    public static void RestartGameplayScene()
+    public static void RestartGameplayScene() => ReturnToMainMenu();
+
+    private static void ReloadGameplayScene()
     {
         Time.timeScale = 1f;
         Cursor.visible = true;
@@ -1824,6 +1838,12 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         EnsureComponent<GraphicRaycaster>(root);
         EnsureEventSystem();
 
+        Sprite roundedSprite = CreateRoundedPanelSprite();
+        Color ink = new Color(.095f, .14f, .14f, .96f);
+        Color teal = new Color(.18f, .25f, .24f, 1f);
+        Color cream = new Color(.98f, .95f, .87f, 1f);
+        Color gold = new Color(.96f, .71f, .30f, 1f);
+
         RectTransform backgroundRect;
         Image backgroundImage = GetOrCreateImage(root.transform, "Health Bar Background", out backgroundRect);
         backgroundRect.anchorMin = new Vector2(0f, 0f);
@@ -1831,50 +1851,82 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         backgroundRect.pivot = new Vector2(0f, 0f);
         backgroundRect.anchoredPosition = new Vector2(28f, 28f);
         backgroundRect.localScale = Vector3.one;
-        backgroundImage.sprite = LoadUiSprite(HealthBarSpritePath);
-        backgroundImage.type = Image.Type.Simple;
-        backgroundImage.preserveAspect = true;
-        backgroundImage.color = Color.white;
+        backgroundRect.sizeDelta = new Vector2(260f, 76f);
+        backgroundImage.sprite = roundedSprite;
+        backgroundImage.type = Image.Type.Sliced;
+        backgroundImage.preserveAspect = false;
+        backgroundImage.color = ink;
         backgroundImage.raycastTarget = false;
-        if (backgroundImage.sprite != null)
-        {
-            const float displayedHealthBarHeight = 240f;
-            float sourceAspect = backgroundImage.sprite.rect.width / backgroundImage.sprite.rect.height;
-            backgroundRect.sizeDelta = new Vector2(displayedHealthBarHeight * sourceAspect, displayedHealthBarHeight);
-        }
+
+        Transform legacyBolt = backgroundRect.Find("Health Bar Bolt");
+        if (legacyBolt != null) { legacyBolt.gameObject.SetActive(false); Object.Destroy(legacyBolt.gameObject); }
+
+        RectTransform iconRect;
+        Image icon = GetOrCreateImage(backgroundRect, "Health Icon", out iconRect);
+        iconRect.anchorMin = iconRect.anchorMax = new Vector2(0f, .5f);
+        iconRect.pivot = new Vector2(0f, .5f);
+        iconRect.anchoredPosition = new Vector2(9f, 0f);
+        iconRect.sizeDelta = new Vector2(58f, 58f);
+        icon.sprite = roundedSprite;
+        icon.type = Image.Type.Sliced;
+        icon.color = teal;
+        icon.raycastTarget = false;
+
+        RectTransform plusRect;
+        Text plus = GetOrCreateText(iconRect, "Plus", out plusRect);
+        plusRect.anchorMin = Vector2.zero;
+        plusRect.anchorMax = Vector2.one;
+        plusRect.offsetMin = plusRect.offsetMax = Vector2.zero;
+        plus.text = "+";
+        plus.alignment = TextAnchor.MiddleCenter;
+        plus.fontSize = 36;
+        plus.fontStyle = FontStyle.Bold;
+        plus.color = cream;
+        plus.raycastTarget = false;
+
+        RectTransform healthValueRect;
+        Text healthValue = GetOrCreateText(backgroundRect, "Health Value", out healthValueRect);
+        healthValueRect.anchorMin = healthValueRect.anchorMax = new Vector2(0f, 1f);
+        healthValueRect.pivot = new Vector2(0f, 1f);
+        healthValueRect.anchoredPosition = new Vector2(78f, -11f);
+        healthValueRect.sizeDelta = new Vector2(168f, 24f);
+        healthValue.text = "100 / 100";
+        healthValue.alignment = TextAnchor.MiddleLeft;
+        healthValue.fontSize = 17;
+        healthValue.fontStyle = FontStyle.Bold;
+        healthValue.color = cream;
+        healthValue.raycastTarget = false;
+
+        RectTransform healthTrackRect;
+        Image healthTrack = GetOrCreateImage(backgroundRect, "Health Track", out healthTrackRect);
+        healthTrackRect.anchorMin = healthTrackRect.anchorMax = new Vector2(0f, 1f);
+        healthTrackRect.pivot = new Vector2(0f, 1f);
+        healthTrackRect.anchoredPosition = new Vector2(78f, -47f);
+        healthTrackRect.sizeDelta = new Vector2(168f, 16f);
+        healthTrack.sprite = roundedSprite;
+        healthTrack.type = Image.Type.Sliced;
+        healthTrack.color = teal;
+        healthTrack.raycastTarget = false;
+
+        Transform legacyFill = backgroundRect.Find("Health Bar Fill");
+        if (legacyFill != null) legacyFill.SetParent(healthTrackRect, false);
 
         RectTransform fillRect;
-        Image fillImage = GetOrCreateImage(backgroundRect, "Health Bar Fill", out fillRect);
+        Image fillImage = GetOrCreateImage(healthTrackRect, "Health Bar Fill", out fillRect);
         fillRect.anchorMin = Vector2.zero;
         fillRect.anchorMax = Vector2.one;
         fillRect.offsetMin = Vector2.zero;
         fillRect.offsetMax = Vector2.zero;
-        fillImage.sprite = LoadUiSprite(HealthBarGreenSpritePath);
-        fillImage.type = Image.Type.Filled;
-        fillImage.fillMethod = Image.FillMethod.Vertical;
-        fillImage.fillOrigin = (int)Image.OriginVertical.Bottom;
+        fillImage.sprite = BrushBarSpriteFactory.Horizontal;
+        fillImage.type = Image.Type.Simple;
         fillImage.fillAmount = 1f;
-        fillImage.preserveAspect = true;
-        fillImage.color = Color.white;
+        fillImage.preserveAspect = false;
+        fillImage.color = gold;
         fillImage.raycastTarget = false;
 
-        RectTransform boltRect;
-        Image boltImage = GetOrCreateImage(backgroundRect, "Health Bar Bolt", out boltRect);
-        boltRect.anchorMin = Vector2.zero;
-        boltRect.anchorMax = Vector2.one;
-        boltRect.offsetMin = Vector2.zero;
-        boltRect.offsetMax = Vector2.zero;
-        boltRect.localScale = Vector3.one;
-        boltImage.sprite = LoadUiSprite(HealthBarBoltSpritePath);
-        boltImage.type = Image.Type.Simple;
-        boltImage.preserveAspect = true;
-        boltImage.color = Color.white;
-        boltImage.raycastTarget = false;
-        boltRect.SetAsLastSibling();
-
         GameObject gameOverPanel = EnsureGameOverPanel(root.transform);
-        Button restartButton = EnsureRestartButton(gameOverPanel.transform);
-        Image gameplayCursor = EnsureGameplayCursor(root.transform);
+        Button restartButton = EnsureDefeatButtons(gameOverPanel.transform, out Button menuButton);
+        Image gameplayCursor = EnsureGameplayCursor(root.transform, playerHealth.GetComponent<TankShooter>());
         EnsureHitMarker(root.transform, canvas);
         EnsureEnemyMarkers(root.transform, canvas);
         Image damageVignette = EnsureDamageVignette(root.transform);
@@ -1886,7 +1938,10 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
             playerHealth.GetComponent<TankSpecialWeapon>());
 
         PlayerHealthBar healthBar = EnsureComponent<PlayerHealthBar>(root);
-        healthBar.Configure(playerHealth, fillImage, gameOverPanel, restartButton, gameplayCursor);
+        healthBar.Configure(playerHealth, fillImage, healthValue, gameOverPanel, restartButton, menuButton, gameplayCursor);
+        TankBattleProgression progression = EnsureComponent<TankBattleProgression>(playerHealth.gameObject);
+        progression.ConfigureGameplay(playerHealth, playerHealth.GetComponent<TankShooter>(), playerHealth.GetComponent<TankController>());
+        EnsureBattleProgressionUi(root.transform, progression);
         PlayerDamageVignette vignette = EnsureComponent<PlayerDamageVignette>(root);
         vignette.Configure(playerHealth, damageVignette);
         return root;
@@ -1894,46 +1949,102 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
 
     private static void EnsureNitroBar(Transform parent, TankNitro nitro)
     {
+        Sprite roundedSprite = CreateRoundedPanelSprite();
+        Color ink = new Color(.095f, .14f, .14f, .96f);
+        Color teal = new Color(.18f, .25f, .24f, 1f);
+        Color cream = new Color(.98f, .95f, .87f, 1f);
+        Color gold = new Color(.96f, .71f, .30f, 1f);
+
         RectTransform backgroundRect;
         Image background = GetOrCreateImage(parent, "Nitro Bar Background", out backgroundRect);
         backgroundRect.anchorMin = new Vector2(1f, 0f);
         backgroundRect.anchorMax = new Vector2(1f, 0f);
         backgroundRect.pivot = new Vector2(1f, 0f);
         backgroundRect.anchoredPosition = new Vector2(-28f, 28f);
-        // The source art is square, so scale both axes together without distortion.
-        backgroundRect.sizeDelta = new Vector2(180f, 180f);
-        background.sprite = LoadUiSprite(NitroOpacitySpritePath);
-        background.type = Image.Type.Simple;
-        // Both artwork layers use the same rect and aspect, so they align exactly.
-        background.preserveAspect = true;
-        background.color = Color.white;
+        backgroundRect.sizeDelta = new Vector2(260f, 76f);
+        background.sprite = roundedSprite;
+        background.type = Image.Type.Sliced;
+        background.preserveAspect = false;
+        background.color = ink;
         background.raycastTarget = false;
 
-        Transform existingMask = backgroundRect.Find("Nitro Fill Mask");
-        Transform maskedFill = existingMask != null ? existingMask.Find("Nitro Fill") : null;
-        if (maskedFill != null)
-        {
-            maskedFill.SetParent(backgroundRect, false);
-        }
+        RectTransform iconRect;
+        Image icon = GetOrCreateImage(backgroundRect, "Nitro Icon", out iconRect);
+        iconRect.anchorMin = iconRect.anchorMax = new Vector2(0f, .5f);
+        iconRect.pivot = new Vector2(0f, .5f);
+        iconRect.anchoredPosition = new Vector2(9f, 0f);
+        iconRect.sizeDelta = new Vector2(58f, 58f);
+        icon.sprite = roundedSprite;
+        icon.type = Image.Type.Sliced;
+        icon.color = teal;
+        icon.raycastTarget = false;
+
+        RectTransform symbolRect;
+        Text symbol = GetOrCreateText(iconRect, "Nitro Symbol", out symbolRect);
+        symbolRect.anchorMin = Vector2.zero;
+        symbolRect.anchorMax = Vector2.one;
+        symbolRect.offsetMin = symbolRect.offsetMax = Vector2.zero;
+        symbol.text = "N₂O";
+        symbol.alignment = TextAnchor.MiddleCenter;
+        symbol.fontSize = 20;
+        symbol.fontStyle = FontStyle.Bold;
+        symbol.color = gold;
+        symbol.raycastTarget = false;
+
+        RectTransform valueRect;
+        Text value = GetOrCreateText(backgroundRect, "Nitro Value", out valueRect);
+        valueRect.anchorMin = valueRect.anchorMax = new Vector2(0f, 1f);
+        valueRect.pivot = new Vector2(0f, 1f);
+        valueRect.anchoredPosition = new Vector2(78f, -11f);
+        valueRect.sizeDelta = new Vector2(168f, 24f);
+        value.text = "100%";
+        value.alignment = TextAnchor.MiddleLeft;
+        value.fontSize = 17;
+        value.fontStyle = FontStyle.Bold;
+        value.color = cream;
+        value.raycastTarget = false;
+
+        RectTransform glowRect;
+        Image glow = GetOrCreateImage(backgroundRect, "Nitro Glow", out glowRect);
+        glowRect.anchorMin = glowRect.anchorMax = new Vector2(0f, 1f);
+        glowRect.pivot = new Vector2(0f, 1f);
+        glowRect.anchoredPosition = new Vector2(74f, -43f);
+        glowRect.sizeDelta = new Vector2(176f, 24f);
+        glow.sprite = BrushBarSpriteFactory.Horizontal;
+        glow.type = Image.Type.Simple;
+        glow.color = new Color(.12f, .86f, 1f, .28f);
+        glow.raycastTarget = false;
+
+        RectTransform trackRect;
+        Image track = GetOrCreateImage(backgroundRect, "Nitro Track", out trackRect);
+        trackRect.anchorMin = trackRect.anchorMax = new Vector2(0f, 1f);
+        trackRect.pivot = new Vector2(0f, 1f);
+        trackRect.anchoredPosition = new Vector2(78f, -47f);
+        trackRect.sizeDelta = new Vector2(168f, 16f);
+        track.sprite = roundedSprite;
+        track.type = Image.Type.Sliced;
+        track.color = teal;
+        track.raycastTarget = false;
+
+        Transform existingFill = backgroundRect.Find("Nitro Fill");
+        if (existingFill != null) existingFill.SetParent(trackRect, false);
 
         RectTransform fillRect;
-        Image fill = GetOrCreateImage(backgroundRect, "Nitro Fill", out fillRect);
+        Image fill = GetOrCreateImage(trackRect, "Nitro Fill", out fillRect);
         fillRect.anchorMin = Vector2.zero;
         fillRect.anchorMax = Vector2.one;
         fillRect.pivot = new Vector2(0.5f, 0.5f);
         fillRect.offsetMin = Vector2.zero;
         fillRect.offsetMax = Vector2.zero;
-        fill.sprite = LoadUiSprite(NitroSpritePath);
-        fill.type = Image.Type.Filled;
-        fill.fillMethod = Image.FillMethod.Vertical;
-        fill.fillOrigin = (int)Image.OriginVertical.Bottom;
+        fill.sprite = BrushBarSpriteFactory.Horizontal;
+        fill.type = Image.Type.Simple;
         fill.fillAmount = 1f;
-        fill.preserveAspect = true;
-        fill.color = Color.white;
+        fill.preserveAspect = false;
+        fill.color = gold;
         fill.raycastTarget = false;
 
         NitroBarDisplay display = EnsureComponent<NitroBarDisplay>(background.gameObject);
-        display.Configure(nitro, fill);
+        display.Configure(nitro, fill, glow, value);
     }
 
     private static void EnsureNitroSpeedEffect(Transform parent, TankNitro nitro)
@@ -2051,10 +2162,8 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         chargeFillRect.anchorMax = Vector2.one;
         chargeFillRect.offsetMin = Vector2.zero;
         chargeFillRect.offsetMax = Vector2.zero;
-        chargeFill.sprite = roundedSprite;
-        chargeFill.type = Image.Type.Filled;
-        chargeFill.fillMethod = Image.FillMethod.Horizontal;
-        chargeFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+        chargeFill.sprite = BrushBarSpriteFactory.Horizontal;
+        chargeFill.type = Image.Type.Simple;
         chargeFill.color = gold;
         chargeFill.raycastTarget = false;
 
@@ -2099,6 +2208,256 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         display.Configure(rewards, specialWeapon, null, chargeFill, targetMarker, numeral, ultimateName, status, shortcutBackground);
     }
 
+    private static void EnsureBattleProgressionUi(Transform parent, TankBattleProgression progression)
+    {
+        Sprite roundedSprite = CreateRoundedPanelSprite();
+        Color ink = new Color(.095f, .14f, .14f, .97f);
+        Color teal = new Color(.18f, .25f, .24f, 1f);
+        Color cream = new Color(.98f, .95f, .87f, 1f);
+        Color muted = new Color(.67f, .73f, .69f, 1f);
+        Color gold = new Color(.96f, .71f, .30f, 1f);
+
+        RectTransform progressRect;
+        Image progressBackground = GetOrCreateImage(parent, "Battle Progress Background", out progressRect);
+        progressRect.anchorMin = progressRect.anchorMax = new Vector2(.5f, 1f);
+        progressRect.pivot = new Vector2(.5f, 1f);
+        progressRect.anchoredPosition = new Vector2(0f, -18f);
+        progressRect.sizeDelta = new Vector2(390f, 68f);
+        progressBackground.sprite = roundedSprite;
+        progressBackground.type = Image.Type.Sliced;
+        progressBackground.color = ink;
+        progressBackground.raycastTarget = false;
+
+        RectTransform levelRect;
+        Text level = GetOrCreateText(progressRect, "Level", out levelRect);
+        levelRect.anchorMin = levelRect.anchorMax = new Vector2(0f, .5f);
+        levelRect.pivot = new Vector2(0f, .5f);
+        levelRect.anchoredPosition = new Vector2(18f, 0f);
+        levelRect.sizeDelta = new Vector2(84f, 40f);
+        level.text = "УР. 1";
+        level.alignment = TextAnchor.MiddleLeft;
+        level.fontSize = 21;
+        level.fontStyle = FontStyle.Bold;
+        level.color = cream;
+        level.raycastTarget = false;
+
+        RectTransform xpLabelRect;
+        Text xpLabel = GetOrCreateText(progressRect, "Experience Label", out xpLabelRect);
+        xpLabelRect.anchorMin = xpLabelRect.anchorMax = new Vector2(0f, 1f);
+        xpLabelRect.pivot = new Vector2(0f, 1f);
+        xpLabelRect.anchoredPosition = new Vector2(112f, -8f);
+        xpLabelRect.sizeDelta = new Vector2(92f, 20f);
+        xpLabel.text = "ОПЫТ";
+        xpLabel.alignment = TextAnchor.MiddleLeft;
+        xpLabel.fontSize = 13;
+        xpLabel.fontStyle = FontStyle.Bold;
+        xpLabel.color = muted;
+        xpLabel.raycastTarget = false;
+
+        RectTransform counterRect;
+        Text counter = GetOrCreateText(progressRect, "Experience Counter", out counterRect);
+        counterRect.anchorMin = counterRect.anchorMax = new Vector2(1f, 1f);
+        counterRect.pivot = new Vector2(1f, 1f);
+        counterRect.anchoredPosition = new Vector2(-15f, -9f);
+        counterRect.sizeDelta = new Vector2(118f, 20f);
+        counter.text = "0 / 100";
+        counter.alignment = TextAnchor.MiddleRight;
+        counter.fontSize = 12;
+        counter.fontStyle = FontStyle.Bold;
+        counter.color = gold;
+        counter.raycastTarget = false;
+
+        RectTransform trackRect;
+        Image track = GetOrCreateImage(progressRect, "Experience Track", out trackRect);
+        trackRect.anchorMin = trackRect.anchorMax = new Vector2(0f, 1f);
+        trackRect.pivot = new Vector2(0f, 1f);
+        trackRect.anchoredPosition = new Vector2(112f, -36f);
+        trackRect.sizeDelta = new Vector2(260f, 16f);
+        track.sprite = roundedSprite;
+        track.type = Image.Type.Sliced;
+        track.color = teal;
+        track.raycastTarget = false;
+
+        RectTransform fillRect;
+        Image fill = GetOrCreateImage(trackRect, "Experience Fill", out fillRect);
+        fillRect.anchorMin = Vector2.zero;
+        fillRect.anchorMax = Vector2.one;
+        fillRect.offsetMin = fillRect.offsetMax = Vector2.zero;
+        fill.sprite = BrushBarSpriteFactory.Horizontal;
+        fill.type = Image.Type.Simple;
+        fill.color = gold;
+        fill.raycastTarget = false;
+
+        RectTransform overlayRect;
+        Image overlay = GetOrCreateImage(parent, "Battle Upgrade Selection", out overlayRect);
+        overlayRect.anchorMin = Vector2.zero;
+        overlayRect.anchorMax = Vector2.one;
+        overlayRect.offsetMin = overlayRect.offsetMax = Vector2.zero;
+        overlay.sprite = null;
+        overlay.color = new Color(.025f, .045f, .043f, .78f);
+        overlay.raycastTarget = true;
+
+        RectTransform selectorRect;
+        Image selector = GetOrCreateImage(overlayRect, "Upgrade Card Panel", out selectorRect);
+        selectorRect.anchorMin = selectorRect.anchorMax = new Vector2(.5f, .5f);
+        selectorRect.pivot = new Vector2(.5f, .5f);
+        selectorRect.anchoredPosition = Vector2.zero;
+        selectorRect.sizeDelta = new Vector2(1060f, 454f);
+        selector.sprite = roundedSprite;
+        selector.type = Image.Type.Sliced;
+        selector.color = ink;
+        selector.raycastTarget = true;
+
+        RectTransform titleRect;
+        Text title = GetOrCreateText(selectorRect, "Title", out titleRect);
+        titleRect.anchorMin = titleRect.anchorMax = new Vector2(.5f, 1f);
+        titleRect.pivot = new Vector2(.5f, 1f);
+        titleRect.anchoredPosition = new Vector2(0f, -24f);
+        titleRect.sizeDelta = new Vector2(680f, 42f);
+        title.text = "НОВЫЙ УРОВЕНЬ";
+        title.alignment = TextAnchor.MiddleCenter;
+        title.fontSize = 30;
+        title.fontStyle = FontStyle.Bold;
+        title.color = cream;
+        title.raycastTarget = false;
+
+        RectTransform subtitleRect;
+        Text subtitle = GetOrCreateText(selectorRect, "Subtitle", out subtitleRect);
+        subtitleRect.anchorMin = subtitleRect.anchorMax = new Vector2(.5f, 1f);
+        subtitleRect.pivot = new Vector2(.5f, 1f);
+        subtitleRect.anchoredPosition = new Vector2(0f, -65f);
+        subtitleRect.sizeDelta = new Vector2(680f, 24f);
+        subtitle.text = "ВЫБЕРИ ОДНО УЛУЧШЕНИЕ";
+        subtitle.alignment = TextAnchor.MiddleCenter;
+        subtitle.fontSize = 13;
+        subtitle.fontStyle = FontStyle.Bold;
+        subtitle.color = muted;
+        subtitle.raycastTarget = false;
+
+        Button[] buttons = new Button[3];
+        Text[] icons = new Text[3];
+        Text[] names = new Text[3];
+        Text[] descriptions = new Text[3];
+        Text[] bonuses = new Text[3];
+        for (int i = 0; i < 3; i++)
+        {
+            RectTransform cardRect;
+            Image card = GetOrCreateImage(selectorRect, $"Upgrade Card {i + 1}", out cardRect);
+            cardRect.anchorMin = cardRect.anchorMax = new Vector2(0f, 1f);
+            cardRect.pivot = new Vector2(0f, 1f);
+            cardRect.anchoredPosition = new Vector2(35f + i * 330f, -108f);
+            cardRect.sizeDelta = new Vector2(300f, 310f);
+            card.sprite = roundedSprite;
+            card.type = Image.Type.Sliced;
+            card.color = teal;
+            card.raycastTarget = true;
+
+            Button button = EnsureComponent<Button>(card.gameObject);
+            button.targetGraphic = card;
+            button.navigation = new Navigation { mode = Navigation.Mode.None };
+            ColorBlock colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.08f, 1.08f, 1.08f, 1f);
+            colors.pressedColor = new Color(.9f, .9f, .9f, 1f);
+            colors.disabledColor = new Color(.42f, .46f, .44f, .75f);
+            colors.fadeDuration = .08f;
+            button.colors = colors;
+            buttons[i] = button;
+
+            RectTransform iconBackgroundRect;
+            Image iconBackground = GetOrCreateImage(cardRect, "Icon", out iconBackgroundRect);
+            iconBackgroundRect.anchorMin = iconBackgroundRect.anchorMax = new Vector2(.5f, 1f);
+            iconBackgroundRect.pivot = new Vector2(.5f, 1f);
+            iconBackgroundRect.anchoredPosition = new Vector2(0f, -20f);
+            iconBackgroundRect.sizeDelta = new Vector2(82f, 82f);
+            iconBackground.sprite = roundedSprite;
+            iconBackground.type = Image.Type.Sliced;
+            iconBackground.color = ink;
+            iconBackground.raycastTarget = false;
+
+            RectTransform iconTextRect;
+            icons[i] = GetOrCreateText(iconBackgroundRect, "Symbol", out iconTextRect);
+            iconTextRect.anchorMin = Vector2.zero;
+            iconTextRect.anchorMax = Vector2.one;
+            iconTextRect.offsetMin = iconTextRect.offsetMax = Vector2.zero;
+            icons[i].text = i == 0 ? "III" : i == 1 ? "+" : "N₂O";
+            icons[i].alignment = TextAnchor.MiddleCenter;
+            icons[i].fontSize = 28;
+            icons[i].fontStyle = FontStyle.Bold;
+            icons[i].color = gold;
+            icons[i].raycastTarget = false;
+
+            RectTransform nameRect;
+            names[i] = GetOrCreateText(cardRect, "Name", out nameRect);
+            nameRect.anchorMin = nameRect.anchorMax = new Vector2(.5f, 1f);
+            nameRect.pivot = new Vector2(.5f, 1f);
+            nameRect.anchoredPosition = new Vector2(0f, -116f);
+            nameRect.sizeDelta = new Vector2(260f, 34f);
+            names[i].alignment = TextAnchor.MiddleCenter;
+            names[i].fontSize = 22;
+            names[i].fontStyle = FontStyle.Bold;
+            names[i].color = cream;
+            names[i].raycastTarget = false;
+
+            RectTransform descriptionRect;
+            descriptions[i] = GetOrCreateText(cardRect, "Description", out descriptionRect);
+            descriptionRect.anchorMin = descriptionRect.anchorMax = new Vector2(.5f, 1f);
+            descriptionRect.pivot = new Vector2(.5f, 1f);
+            descriptionRect.anchoredPosition = new Vector2(0f, -158f);
+            descriptionRect.sizeDelta = new Vector2(260f, 54f);
+            descriptions[i].alignment = TextAnchor.MiddleCenter;
+            descriptions[i].fontSize = 14;
+            descriptions[i].color = muted;
+            descriptions[i].raycastTarget = false;
+
+            RectTransform scaleRect;
+            Image tierScale = GetOrCreateImage(cardRect, "Tier Scale", out scaleRect);
+            scaleRect.anchorMin = scaleRect.anchorMax = new Vector2(.5f, 1f);
+            scaleRect.pivot = new Vector2(.5f, 1f);
+            scaleRect.anchoredPosition = new Vector2(0f, -218f);
+            scaleRect.sizeDelta = new Vector2(250f, 14f);
+            tierScale.color = Color.clear;
+            tierScale.raycastTarget = false;
+            for (int segmentIndex = 0; segmentIndex < TankBattleProgression.MaximumUpgradeTier; segmentIndex++)
+            {
+                RectTransform segmentRect;
+                Image segment = GetOrCreateImage(scaleRect, $"Segment {segmentIndex + 1}", out segmentRect);
+                segmentRect.anchorMin = segmentRect.anchorMax = new Vector2(0f, .5f);
+                segmentRect.pivot = new Vector2(0f, .5f);
+                segmentRect.anchoredPosition = new Vector2(segmentIndex * 51f, 0f);
+                segmentRect.sizeDelta = new Vector2(46f, 10f);
+                segment.sprite = roundedSprite;
+                segment.type = Image.Type.Sliced;
+                segment.color = new Color(.095f, .14f, .14f, .82f);
+                segment.raycastTarget = false;
+            }
+
+            RectTransform bonusRect;
+            Image bonusBackground = GetOrCreateImage(cardRect, "Bonus", out bonusRect);
+            bonusRect.anchorMin = bonusRect.anchorMax = new Vector2(.5f, 0f);
+            bonusRect.pivot = new Vector2(.5f, 0f);
+            bonusRect.anchoredPosition = new Vector2(0f, 18f);
+            bonusRect.sizeDelta = new Vector2(250f, 56f);
+            bonusBackground.sprite = roundedSprite;
+            bonusBackground.type = Image.Type.Sliced;
+            bonusBackground.color = gold;
+            bonusBackground.raycastTarget = false;
+
+            RectTransform bonusTextRect;
+            bonuses[i] = GetOrCreateText(bonusRect, "Text", out bonusTextRect);
+            bonusTextRect.anchorMin = Vector2.zero;
+            bonusTextRect.anchorMax = Vector2.one;
+            bonusTextRect.offsetMin = bonusTextRect.offsetMax = Vector2.zero;
+            bonuses[i].alignment = TextAnchor.MiddleCenter;
+            bonuses[i].fontSize = 18;
+            bonuses[i].fontStyle = FontStyle.Bold;
+            bonuses[i].color = ink;
+            bonuses[i].raycastTarget = false;
+        }
+
+        progression.ConfigureUi(fill, level, xpLabel, counter, overlay.gameObject, title, subtitle, buttons, icons, names, descriptions, bonuses);
+    }
+
     private static MainMenuController EnsureMainMenu(GameObject tank, Camera camera)
     {
         var old = GameObject.Find("Main Menu UI");
@@ -2119,8 +2478,12 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         rect.offsetMin = rect.offsetMax = Vector2.zero;
         var view = panel.AddComponent<GarageMenuView>();
         view.Build();
+        bool startImmediately = restartBattleAfterReload;
+        int startSkin = restartBattleSkin;
+        bool startInfinite = restartInfiniteMode;
+        restartBattleAfterReload = false;
         currentMainMenu = root.AddComponent<MainMenuController>();
-        currentMainMenu.Configure(view, camera, tank);
+        currentMainMenu.Configure(view, camera, tank, startImmediately, startSkin, startInfinite);
         return currentMainMenu;
     }
 
@@ -2168,12 +2531,13 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         panelRect.anchoredPosition = Vector2.zero;
         panelRect.offsetMin = Vector2.zero;
         panelRect.offsetMax = Vector2.zero;
-        panelImage.color = new Color(0f, 0f, 0f, 0.58f);
+        panelImage.color = new Color(.025f, .045f, .043f, .52f);
+        panelImage.raycastTarget = true;
         panelImage.gameObject.SetActive(false);
         return panelImage.gameObject;
     }
 
-    private static Image EnsureGameplayCursor(Transform parent)
+    private static Image EnsureGameplayCursor(Transform parent, TankShooter shooter)
     {
         RectTransform cursorRect;
         Image cursorImage = GetOrCreateImage(parent, "Gameplay Cursor", out cursorRect);
@@ -2181,32 +2545,69 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         cursorRect.anchorMax = new Vector2(0.5f, 0.5f);
         cursorRect.pivot = new Vector2(0.5f, 0.5f);
         cursorRect.anchoredPosition = Vector2.zero;
-        cursorRect.sizeDelta = new Vector2(56f, 56f);
+        cursorRect.sizeDelta = new Vector2(88f, 88f);
 
-        cursorImage.sprite = LoadUiSprite(ScopeSpritePath);
+        cursorImage.sprite = null;
         cursorImage.type = Image.Type.Simple;
-        cursorImage.preserveAspect = true;
-        cursorImage.color = Color.white;
+        cursorImage.preserveAspect = false;
+        cursorImage.color = Color.clear;
         cursorImage.raycastTarget = false;
 
+        RectTransform ringRect;
+        Image ringRoot = GetOrCreateImage(cursorRect, "Recoil Ring", out ringRect);
+        ringRect.anchorMin = ringRect.anchorMax = new Vector2(.5f, .5f);
+        ringRect.pivot = new Vector2(.5f, .5f);
+        ringRect.anchoredPosition = Vector2.zero;
+        ringRect.sizeDelta = new Vector2(64f, 64f);
+        ringRoot.sprite = null;
+        ringRoot.color = Color.clear;
+        ringRoot.raycastTarget = false;
+
+        RectTransform backgroundRect;
+        Image ringBackground = GetOrCreateImage(ringRect, "Ring Background", out backgroundRect);
+        backgroundRect.anchorMin = Vector2.zero;
+        backgroundRect.anchorMax = Vector2.one;
+        backgroundRect.offsetMin = Vector2.zero;
+        backgroundRect.offsetMax = Vector2.zero;
+        ringBackground.sprite = CrosshairSpriteFactory.SegmentedRing;
+        ringBackground.type = Image.Type.Simple;
+        ringBackground.preserveAspect = true;
+        ringBackground.color = new Color(.035f, .055f, .052f, .76f);
+        ringBackground.raycastTarget = false;
+
         RectTransform reloadRect;
-        Image reloadImage = GetOrCreateImage(cursorRect, "Reload Fill", out reloadRect);
+        Image reloadImage = GetOrCreateImage(ringRect, "Reload Fill", out reloadRect);
         reloadRect.anchorMin = Vector2.zero;
         reloadRect.anchorMax = Vector2.one;
-        reloadRect.pivot = new Vector2(0.5f, 0.5f);
+        reloadRect.pivot = new Vector2(.5f, .5f);
         reloadRect.anchoredPosition = Vector2.zero;
         reloadRect.offsetMin = Vector2.zero;
         reloadRect.offsetMax = Vector2.zero;
-        reloadImage.sprite = cursorImage.sprite;
+        reloadImage.sprite = CrosshairSpriteFactory.SegmentedRing;
         reloadImage.type = Image.Type.Filled;
         reloadImage.fillMethod = Image.FillMethod.Radial360;
         reloadImage.fillOrigin = (int)Image.Origin360.Top;
         reloadImage.fillClockwise = true;
         reloadImage.fillAmount = 1f;
         reloadImage.preserveAspect = true;
-        reloadImage.color = Color.white;
+        reloadImage.color = new Color(.98f, .95f, .87f, 1f);
         reloadImage.raycastTarget = false;
-        reloadImage.gameObject.SetActive(false);
+        reloadImage.gameObject.SetActive(true);
+
+        RectTransform diamondRect;
+        Image diamondImage = GetOrCreateImage(cursorRect, "Gold Diamond", out diamondRect);
+        diamondRect.anchorMin = diamondRect.anchorMax = new Vector2(.5f, .5f);
+        diamondRect.pivot = new Vector2(.5f, .5f);
+        diamondRect.anchoredPosition = Vector2.zero;
+        diamondRect.sizeDelta = new Vector2(13f, 13f);
+        diamondImage.sprite = CrosshairSpriteFactory.Diamond;
+        diamondImage.type = Image.Type.Simple;
+        diamondImage.preserveAspect = true;
+        diamondImage.color = new Color(.96f, .71f, .30f, 1f);
+        diamondImage.raycastTarget = false;
+
+        GameplayCrosshairDisplay display = EnsureComponent<GameplayCrosshairDisplay>(cursorImage.gameObject);
+        display.Configure(shooter, ringRect, reloadImage, diamondImage);
         return cursorImage;
     }
 
@@ -2311,47 +2712,107 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         return announcement;
     }
 
-    private static Button EnsureRestartButton(Transform parent)
+    private static Button EnsureDefeatButtons(Transform parent, out Button menuButton)
     {
-        RectTransform buttonRect;
-        Image buttonImage = GetOrCreateImage(parent, "Restart Button", out buttonRect);
-        buttonRect.anchorMin = new Vector2(0.5f, 0.5f);
-        buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
-        buttonRect.pivot = new Vector2(0.5f, 0.5f);
-        buttonRect.anchoredPosition = new Vector2(0f, -30f);
-        buttonRect.sizeDelta = new Vector2(190f, 52f);
-        buttonImage.color = new Color(0.12f, 0.62f, 0.15f, 1f);
+        Sprite roundedSprite = CreateRoundedPanelSprite();
+        Color ink = new Color(.095f, .14f, .14f, .98f);
+        Color teal = new Color(.18f, .25f, .24f, 1f);
+        Color cream = new Color(.98f, .95f, .87f, 1f);
+        Color gold = new Color(.96f, .71f, .30f, 1f);
 
-        Button button = EnsureComponent<Button>(buttonImage.gameObject);
+        RectTransform cardRect;
+        Image card = GetOrCreateImage(parent, "Defeat Card", out cardRect);
+        cardRect.anchorMin = cardRect.anchorMax = new Vector2(.5f, .5f);
+        cardRect.pivot = new Vector2(.5f, .5f);
+        cardRect.anchoredPosition = Vector2.zero;
+        cardRect.sizeDelta = new Vector2(436f, 176f);
+        card.sprite = roundedSprite;
+        card.type = Image.Type.Sliced;
+        card.color = ink;
+        card.raycastTarget = false;
 
         RectTransform titleRect;
-        Text title = GetOrCreateText(parent, "Game Over Text", out titleRect);
-        titleRect.anchorMin = new Vector2(0.5f, 0.5f);
-        titleRect.anchorMax = new Vector2(0.5f, 0.5f);
-        titleRect.pivot = new Vector2(0.5f, 0.5f);
-        titleRect.anchoredPosition = new Vector2(0f, 42f);
-        titleRect.sizeDelta = new Vector2(280f, 40f);
+        Text title = GetOrCreateText(cardRect, "Game Over Text", out titleRect);
+        titleRect.anchorMin = titleRect.anchorMax = new Vector2(.5f, 1f);
+        titleRect.pivot = new Vector2(.5f, 1f);
+        titleRect.anchoredPosition = new Vector2(0f, -22f);
+        titleRect.sizeDelta = new Vector2(388f, 42f);
         title.alignment = TextAnchor.MiddleCenter;
         EnsureComponent<LocalizedGameText>(title.gameObject).Configure("ПОРАЖЕНИЕ", "GAME OVER");
-        title.fontSize = 28;
-        title.color = Color.white;
+        title.fontSize = 30;
+        title.fontStyle = FontStyle.Bold;
+        title.color = cream;
+        title.raycastTarget = false;
 
-        RectTransform buttonTextRect;
-        Text buttonText = GetOrCreateText(buttonRect, "Text", out buttonTextRect);
-        buttonTextRect.anchorMin = Vector2.zero;
-        buttonTextRect.anchorMax = Vector2.one;
-        buttonTextRect.offsetMin = Vector2.zero;
-        buttonTextRect.offsetMax = Vector2.zero;
-        buttonText.alignment = TextAnchor.MiddleCenter;
-        EnsureComponent<LocalizedGameText>(buttonText.gameObject).Configure("ЗАНОВО", "RESTART");
-        buttonText.fontSize = 24;
-        buttonText.color = Color.white;
+        Button restartButton = CreateDefeatButton(cardRect, "Restart Button", new Vector2(-98f, -40f), gold, ink, "ЗАНОВО", "RESTART", roundedSprite);
+        menuButton = CreateDefeatButton(cardRect, "Menu Button", new Vector2(98f, -40f), teal, cream, "МЕНЮ", "MENU", roundedSprite);
+        return restartButton;
+    }
 
+    private static Button CreateDefeatButton(
+        Transform parent,
+        string name,
+        Vector2 position,
+        Color backgroundColor,
+        Color textColor,
+        string russian,
+        string english,
+        Sprite roundedSprite)
+    {
+        RectTransform buttonRect;
+        Image buttonImage = GetOrCreateImage(parent, name, out buttonRect);
+        buttonRect.anchorMin = buttonRect.anchorMax = new Vector2(.5f, .5f);
+        buttonRect.pivot = new Vector2(.5f, .5f);
+        buttonRect.anchoredPosition = position;
+        buttonRect.sizeDelta = new Vector2(180f, 54f);
+        buttonImage.sprite = roundedSprite;
+        buttonImage.type = Image.Type.Sliced;
+        buttonImage.color = backgroundColor;
+        buttonImage.raycastTarget = true;
+
+        Button button = EnsureComponent<Button>(buttonImage.gameObject);
+        button.targetGraphic = buttonImage;
+        ColorBlock colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(1.08f, 1.08f, 1.08f, 1f);
+        colors.pressedColor = new Color(.86f, .86f, .86f, 1f);
+        colors.disabledColor = new Color(.55f, .55f, .55f, .72f);
+        colors.fadeDuration = .1f;
+        button.colors = colors;
+        Navigation navigation = button.navigation;
+        navigation.mode = Navigation.Mode.None;
+        button.navigation = navigation;
+        EnsureComponent<GarageUiMotion>(button.gameObject);
+
+        RectTransform labelRect;
+        Text label = GetOrCreateText(buttonRect, "Text", out labelRect);
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.offsetMin = labelRect.offsetMax = Vector2.zero;
+        label.alignment = TextAnchor.MiddleCenter;
+        EnsureComponent<LocalizedGameText>(label.gameObject).Configure(russian, english);
+        label.fontSize = 20;
+        label.fontStyle = FontStyle.Bold;
+        label.color = textColor;
+        label.raycastTarget = false;
         return button;
     }
 
     private static Sprite LoadUiSprite(string assetPath)
     {
+        string resourcePath = ToResourcesPath(assetPath);
+        Sprite runtimeSprite = Resources.Load<Sprite>(resourcePath);
+        if (runtimeSprite != null)
+        {
+            return runtimeSprite;
+        }
+
+        Texture2D runtimeTexture = Resources.Load<Texture2D>(resourcePath);
+        if (runtimeTexture != null)
+        {
+            return Sprite.Create(runtimeTexture, new Rect(0f, 0f, runtimeTexture.width, runtimeTexture.height), new Vector2(0.5f, 0.5f), 100f);
+        }
+
 #if UNITY_EDITOR
         Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
         if (sprite != null)
@@ -2365,13 +2826,8 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
             return Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
         }
 #endif
-        Texture2D runtimeTexture = Resources.Load<Texture2D>(ToResourcesPath(assetPath));
-        if (runtimeTexture == null)
-        {
-            return null;
-        }
-
-        return Sprite.Create(runtimeTexture, new Rect(0f, 0f, runtimeTexture.width, runtimeTexture.height), new Vector2(0.5f, 0.5f), 100f);
+        Debug.LogWarning($"UI texture is missing from Resources: {assetPath}");
+        return null;
     }
 
     private static Sprite LoadEnemyMarkerSprite()

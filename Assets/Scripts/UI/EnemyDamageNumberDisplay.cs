@@ -25,6 +25,8 @@ public sealed class EnemyDamageNumberDisplay : MonoBehaviour
 
     public static int ActiveCount { get; private set; }
     public static int LastShownDamage { get; private set; }
+    public static bool LastShownCritical { get; private set; }
+    public static Color LastShownColor { get; private set; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics()
@@ -32,16 +34,18 @@ public sealed class EnemyDamageNumberDisplay : MonoBehaviour
         instance = null;
         ActiveCount = 0;
         LastShownDamage = 0;
+        LastShownCritical = false;
+        LastShownColor = Color.clear;
     }
 
-    public static void Show(TankHealth target, int damage)
+    public static void Show(TankHealth target, int damage, bool critical = false)
     {
         if (!Application.isPlaying || target == null || target.Team != TankTeam.Enemy || damage <= 0)
         {
             return;
         }
 
-        EnsureInstance().ShowDamage(target, damage);
+        EnsureInstance().ShowDamage(target, damage, critical);
     }
 
     private static EnemyDamageNumberDisplay EnsureInstance()
@@ -118,7 +122,7 @@ public sealed class EnemyDamageNumberDisplay : MonoBehaviour
         ActiveCount = active;
     }
 
-    private void ShowDamage(TankHealth target, int damage)
+    private void ShowDamage(TankHealth target, int damage, bool critical)
     {
         Popup popup = GetAvailablePopup();
         Bounds bounds = GetTargetBounds(target);
@@ -130,14 +134,16 @@ public sealed class EnemyDamageNumberDisplay : MonoBehaviour
         popup.HorizontalDrift = Random.Range(-.7f, .7f);
         popup.ShownAt = Time.unscaledTime;
         popup.Text.text = damage.ToString();
-        popup.Text.color = damage >= 100
-            ? new Color(1f, .72f, .25f, 1f)
+        popup.Text.color = critical
+            ? new Color(1f, .14f, .08f, 1f)
             : new Color(1f, .96f, .84f, 1f);
         popup.Rect.localRotation = Quaternion.Euler(0f, 0f, Random.Range(-5f, 5f));
         popup.Rect.localScale = Vector3.one * 1.22f;
         SetActive(popup, true);
         popup.Rect.SetAsLastSibling();
         LastShownDamage = damage;
+        LastShownCritical = critical;
+        LastShownColor = popup.Text.color;
     }
 
     private Popup GetAvailablePopup()

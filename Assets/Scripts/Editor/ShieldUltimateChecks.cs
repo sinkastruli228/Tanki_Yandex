@@ -163,6 +163,8 @@ public static class ShieldUltimateChecks
         Check(health.GetComponent<TankShooter>().enabled && health.GetComponent<TankTurretAim>().enabled, "Turret aiming and firing remain enabled");
         Check(Mathf.Approximately(shooter.FireRateMultiplier, 5f), "Shield increases fire rate fivefold");
         Check(Mathf.Approximately(shooter.EffectiveShotCooldown, stockShotCooldown / 5f), "Shield uses one fifth of the stock shot cooldown");
+        Image shieldTimer = GameObject.Find("Special Charge Fill")?.GetComponent<Image>();
+        Check(shieldTimer != null && shieldTimer.fillAmount > 0f && shieldTimer.fillAmount < 1f, "Ultimate bar counts down the remaining shield duration");
 
         protectedHealth = health.CurrentHealth;
         health.TakeDamage(25);
@@ -170,6 +172,8 @@ public static class ShieldUltimateChecks
 
         bool shotFired = false;
         shooter.Shot += () => shotFired = true;
+        FieldInfo lastShotField = typeof(TankShooter).GetField("lastShotTime", BindingFlags.Instance | BindingFlags.NonPublic);
+        lastShotField?.SetValue(shooter, -999f);
         shooter.Fire();
         Check(shotFired, "Player can fire while the shield is active");
 

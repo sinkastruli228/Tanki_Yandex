@@ -53,6 +53,8 @@ public sealed class TopDownCameraFollow : MonoBehaviour
     private Vector3 frozenPosition;
     private Quaternion frozenRotation;
 
+    public bool IsFrozen => isFrozen;
+
     public void Configure(Transform followTarget)
     {
         Configure(followTarget, DefaultOffset, DefaultLookOffset);

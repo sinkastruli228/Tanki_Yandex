@@ -28,6 +28,7 @@ public sealed class ProjectileMovement : MonoBehaviour
     private float despawnTime;
     private bool launched;
     private GameObject owner;
+    private bool criticalHit;
     private TrailRenderer trail;
     private Transform trailAnchor;
     private BoxCollider lowerHitboxCollider;
@@ -81,11 +82,12 @@ public sealed class ProjectileMovement : MonoBehaviour
         trail.emitting = true;
     }
 
-    public void ConfigureDamage(TankTeam team, int damageAmount, GameObject ownerObject)
+    public void ConfigureDamage(TankTeam team, int damageAmount, GameObject ownerObject, bool isCritical = false)
     {
         ownerTeam = team;
         damage = Mathf.Max(0, damageAmount);
         owner = ownerObject;
+        criticalHit = isCritical;
     }
 
     public void ConfigureLowerHitbox(bool enabled, float verticalOffset = LowerHitboxVerticalOffset)
@@ -376,7 +378,7 @@ public sealed class ProjectileMovement : MonoBehaviour
 
     private void DamageTank(TankHealth health, Vector3 hitPoint)
     {
-        health.TakeDamage(damage);
+        health.TakeDamage(damage, criticalHit);
         bool fatal = !health.IsAlive;
         NotifyTankDamaged(hitPoint, fatal);
         if (fatal && ownerTeam == TankTeam.Player && owner != null)
@@ -384,7 +386,7 @@ public sealed class ProjectileMovement : MonoBehaviour
             TankCombatRewards rewards = owner.GetComponent<TankCombatRewards>();
             if (rewards != null)
             {
-                rewards.RegisterKill();
+                rewards.RegisterKill(criticalHit);
             }
         }
     }

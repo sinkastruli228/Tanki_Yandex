@@ -50,6 +50,8 @@ public static class GarageRevisionChecks
                     Check(view.Wallet.Find("Currency").GetComponent<Text>().text == "COINS", "Wallet title translated");
                     Check(view.transform.Find("Garage Title/Title").GetComponent<Text>().text == "DESERT TANKS", "Game title stays unchanged");
                     Check(view.transform.Find("Garage Title/Eyebrow") == null && view.transform.Find("Garage Actions/Section") == null && view.transform.Find("Garage Hint") == null, "Marked captions removed");
+                    Check(view.transform.Find("Garage Actions/Footer") == null && view.transform.Find("Garage Skin Info/Index") == null && view.transform.Find("Garage Skin Info/State") == null, "Newly marked menu captions are removed");
+                    Check(view.transform.Find("Garage Actions").GetComponent<RectTransform>().rect.height <= 330f && view.transform.Find("Garage Skin Info").GetComponent<RectTransform>().rect.height <= 126f, "Menu cards shrink to fit their remaining content");
                     Check(view.PreviousButton.transform.Find("Chevron").GetComponent<RectTransform>().anchoredPosition == Vector2.zero, "Chevron geometry is centered");
                     Check(PlayerPrefs.GetInt("Tanki.Language") == 1, "Language preference is saved");
                     ScreenCapture.CaptureScreenshot(Folder + "english-menu.png");

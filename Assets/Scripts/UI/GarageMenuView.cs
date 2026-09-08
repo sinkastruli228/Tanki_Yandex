@@ -15,7 +15,7 @@ public sealed class GarageMenuView : MonoBehaviour
     public readonly List<Travel> Pieces = new List<Travel>();
     public CanvasGroup Group { get; private set; }
     public Button PlayButton, InfiniteButton, PreviousButton, NextButton, BuyButton, SecretButton;
-    public Text CoinsLabel, SkinName, SkinNumber, SkinState, BuyLabel;
+    public Text CoinsLabel, SkinName, BuyLabel;
     public RectTransform Wallet { get; private set; }
     public GarageUltimatePicker UltimatePicker { get; private set; }
     private readonly Dictionary<Text, string> localizedLabels = new Dictionary<Text, string>();
@@ -54,24 +54,21 @@ public sealed class GarageMenuView : MonoBehaviour
         Label(wallet, "Currency", "МОНЕТЫ", 12, muted, new Vector2(22, -17), new Vector2(144, 18), TextAnchor.MiddleLeft);
         CoinsLabel = Label(wallet, "Balance", "0", 29, cream, new Vector2(22, -39), new Vector2(144, 30), TextAnchor.MiddleLeft, true);
 
-        var actions = Piece("Garage Actions", new Vector2(1, .5f), new Vector2(-56, -20), new Vector2(344, 384), new Vector2(1, .5f), 1);
+        var actions = Piece("Garage Actions", new Vector2(1, .5f), new Vector2(-56, -20), new Vector2(344, 330), new Vector2(1, .5f), 1);
         Panel(actions, ink, .95f);
         PlayButton = ActionButton(actions, "Play", "ИГРАТЬ", -24, gold, ink, () => Play?.Invoke());
         InfiniteButton = ActionButton(actions, "Infinite", "БЕСКОНЕЧНЫЙ БОЙ", -102, new Color(.23f, .31f, .29f), cream, () => Infinite?.Invoke(), 19);
         ActionButton(actions, "Settings", "НАСТРОЙКИ", -180, new Color(.18f, .25f, .24f), cream, ToggleSettings, 20);
         ActionButton(actions, "Exit", "ВЫХОД", -258, new Color(.18f, .25f, .24f), cream, () => Exit?.Invoke(), 20);
-        Label(actions, "Footer", "Аркадные танковые сражения", 13, muted, new Vector2(28, -343), new Vector2(288, 22), TextAnchor.MiddleCenter);
 
         var previous = Piece("Previous Skin", new Vector2(.085f, .43f), Vector2.zero, new Vector2(66, 76), new Vector2(.5f, .5f), -1);
         PreviousButton = ArrowButton(previous, -1, () => Previous?.Invoke());
         var next = Piece("Next Skin", new Vector2(.665f, .43f), Vector2.zero, new Vector2(66, 76), new Vector2(.5f, .5f), 1);
         NextButton = ArrowButton(next, 1, () => Next?.Invoke());
 
-        var info = Piece("Garage Skin Info", new Vector2(.375f, 0), new Vector2(0, 36), new Vector2(392, 177), new Vector2(.5f, 0), -1);
+        var info = Piece("Garage Skin Info", new Vector2(.375f, 0), new Vector2(0, 36), new Vector2(392, 126), new Vector2(.5f, 0), -1);
         Panel(info, ink, .94f);
-        SkinNumber = Label(info, "Index", "РАСКРАСКА  01 / 03", 12, muted, new Vector2(24, -13), new Vector2(250, 22), TextAnchor.MiddleLeft);
-        SkinName = Label(info, "Skin", "ЛЕСНОЙ", 28, cream, new Vector2(24, -39), new Vector2(300, 40), TextAnchor.MiddleLeft, true);
-        SkinState = Label(info, "State", "Классическая зелёная броня", 15, muted, new Vector2(24, -80), new Vector2(340, 22), TextAnchor.MiddleLeft);
+        SkinName = Label(info, "Skin", "ЛЕСНОЙ", 28, cream, new Vector2(24, -18), new Vector2(300, 40), TextAnchor.MiddleLeft, true);
         var buyRect = Rect(info, "Skin Purchase", new Vector2(.5f, 0), new Vector2(0, 14), new Vector2(344, 44), new Vector2(.5f, 0));
         BuyButton = ButtonOn(buyRect, "ВЫБРАНО", 17, gold, ink, () => Buy?.Invoke());
         BuyLabel = BuyButton.GetComponentInChildren<Text>();
@@ -184,13 +181,9 @@ public sealed class GarageMenuView : MonoBehaviour
         bool maus = skin == 3;
         bool owned = maus || TankGarageProgress.Owns(skin);
         CoinsLabel.text = TankGarageProgress.Coins.ToString("N0");
-        SkinNumber.text = maus ? GameLanguage.Translate("СЕКРЕТНЫЙ ТАНК") : GameLanguage.Text($"РАСКРАСКА  {skin + 1:00} / 03", $"PAINT  {skin + 1:00} / 03");
         SkinName.text = GameLanguage.Translate(maus ? "MAUS" : new[] { "ЛЕСНОЙ", "ПУСТЫННЫЙ", "ПОЛЯРНЫЙ" }[skin]);
-        SkinState.text = GameLanguage.Translate(maus ? "Тяжёлая броня. Большие планы." : new[] { "Классическая зелёная броня", "Тёплая палитра песчаных дюн", "Светлая броня северных широт" }[skin]);
         BuyLabel.text = GameLanguage.Translate(owned ? "ВЫБРАНО" : "ОТКРЫТЬ  •  1 000 МОНЕТ");
         BuyButton.interactable = !busy && !owned && TankGarageProgress.Coins >= TankGarageProgress.SkinPrice;
-        if (!owned && TankGarageProgress.Coins < TankGarageProgress.SkinPrice)
-            SkinState.text = GameLanguage.Text($"Нужно ещё {TankGarageProgress.SkinPrice - TankGarageProgress.Coins:N0} монет", $"Need {TankGarageProgress.SkinPrice - TankGarageProgress.Coins:N0} more coins");
         PlayButton.interactable = InfiniteButton.interactable = owned && !busy;
         PreviousButton.interactable = NextButton.interactable = SecretButton.interactable = !busy;
         if (UltimatePicker != null) UltimatePicker.SetInteractable(!busy);

@@ -13,6 +13,8 @@ public sealed class CombatRewardsDisplay : MonoBehaviour
     [SerializeField] private Text ultimateName;
     [SerializeField] private Text chargeStatus;
     [SerializeField] private Image shortcutBackground;
+    private float chargeMaxWidth;
+    private float chargeHeight;
 
     public void Configure(
         TankCombatRewards combatRewards,
@@ -34,6 +36,15 @@ public sealed class CombatRewardsDisplay : MonoBehaviour
         ultimateName = nameLabel;
         chargeStatus = statusLabel;
         shortcutBackground = keyBackground;
+        if (chargeFill != null && chargeFill.rectTransform.parent is RectTransform trackRect)
+        {
+            chargeMaxWidth = Mathf.Max(0f, trackRect.rect.width - 6f);
+            chargeHeight = Mathf.Max(1f, trackRect.rect.height - 4f);
+            RectTransform rect = chargeFill.rectTransform;
+            rect.anchorMin = rect.anchorMax = new Vector2(0f, .5f);
+            rect.pivot = new Vector2(0f, .5f);
+            rect.anchoredPosition = new Vector2(3f, 0f);
+        }
         UpdateVisuals();
     }
 
@@ -59,9 +70,14 @@ public sealed class CombatRewardsDisplay : MonoBehaviour
         bool bombardmentActive = specialWeapon != null && specialWeapon.IsBombardmentActive;
         if (chargeFill != null)
         {
-            chargeFill.fillAmount = shieldActive || bombardmentActive
-                ? 1f
-                : rewards.ChargeNormalized;
+            float displayedCharge = shieldActive
+                ? specialWeapon.ShieldRemainingNormalized
+                : bombardmentActive
+                    ? 1f
+                    : rewards.ChargeNormalized;
+            chargeFill.fillAmount = displayedCharge;
+            chargeFill.rectTransform.sizeDelta = new Vector2(chargeMaxWidth * displayedCharge, chargeHeight);
+            chargeFill.enabled = displayedCharge > .001f;
             chargeFill.color = new Color(.96f, .71f, .30f, 1f);
         }
 
@@ -80,7 +96,7 @@ public sealed class CombatRewardsDisplay : MonoBehaviour
         if (chargeStatus != null)
         {
             chargeStatus.text = shieldActive
-                ? GameLanguage.Text("ЩИТ АКТИВЕН", "SHIELD ACTIVE")
+                ? GameLanguage.Text($"ЩИТ  {Mathf.CeilToInt(specialWeapon.ShieldRemainingSeconds)} С", $"SHIELD  {Mathf.CeilToInt(specialWeapon.ShieldRemainingSeconds)} S")
                 : bombardmentPlanning
                     ? GameLanguage.Text("РИСУЙ ЗОНУ", "PAINT THE ZONE")
                     : bombardmentActive

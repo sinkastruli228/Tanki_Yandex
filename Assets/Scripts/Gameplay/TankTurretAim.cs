@@ -11,6 +11,7 @@ public sealed class TankTurretAim : MonoBehaviour
     [SerializeField] private float mouseYawSensitivity = 0.65f;
 
     public Transform Turret => turret != null ? turret : transform;
+    public float RotationSpeed => rotationSpeed;
 
     private float targetYaw;
     private bool targetYawInitialized;
@@ -54,7 +55,11 @@ public sealed class TankTurretAim : MonoBehaviour
             return;
         }
 
-        targetTurret.rotation = TankPlaneMath.RotationLookingAlong(desiredDirection, localForwardAxis);
+        Quaternion desiredRotation = TankPlaneMath.RotationLookingAlong(desiredDirection, localForwardAxis);
+        targetTurret.rotation = Quaternion.RotateTowards(
+            targetTurret.rotation,
+            desiredRotation,
+            rotationSpeed * Time.deltaTime);
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.None;
     }

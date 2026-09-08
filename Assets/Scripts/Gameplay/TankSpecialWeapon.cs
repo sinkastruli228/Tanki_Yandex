@@ -16,6 +16,8 @@ public sealed class TankSpecialWeapon : MonoBehaviour
 
     public TankHealth CurrentTarget => currentTarget;
     public bool IsShieldActive => shieldUltimate != null && shieldUltimate.IsActive;
+    public float ShieldRemainingNormalized => shieldUltimate != null ? shieldUltimate.RemainingNormalized : 0f;
+    public float ShieldRemainingSeconds => shieldUltimate != null ? shieldUltimate.RemainingSeconds : 0f;
     public bool IsBombardmentPlanning => bombardmentUltimate != null && bombardmentUltimate.IsPlanning;
     public bool IsBombardmentActive => bombardmentUltimate != null && bombardmentUltimate.IsActive;
 

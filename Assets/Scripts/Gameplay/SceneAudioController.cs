@@ -25,6 +25,16 @@ public sealed class SceneAudioController : MonoBehaviour
         SetSourceMuted(musicSource, muted);
     }
 
+    public void StopMusicForDefeat()
+    {
+        if (musicSource != null)
+        {
+            musicSource.Stop();
+        }
+    }
+
+    public bool IsMusicPlaying => musicSource != null && musicSource.isPlaying;
+
     private static void SetSourceMuted(AudioSource source, bool muted)
     {
         if (source == null)

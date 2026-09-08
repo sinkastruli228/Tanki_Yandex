@@ -12,6 +12,7 @@ public sealed class TankShieldUltimate : MonoBehaviour
     private const float DropPause = 0.08f;
     private const float ActiveDuration = 8f;
     private const float DismissDuration = 0.55f;
+    private const float TotalDuration = PlateCount * (DropDuration + DropPause) + ActiveDuration + DismissDuration;
 
     private static readonly int[] DropOrder = { 0, 3, 1, 4, 2, 5 };
     private static Material plateMaterial;
@@ -26,9 +27,12 @@ public sealed class TankShieldUltimate : MonoBehaviour
     private TankShooter shooter;
     private GameObject shieldRoot;
     private Coroutine routine;
+    private float remainingDuration;
 
     public bool IsActive { get; private set; }
     public int ActivePlateCount { get; private set; }
+    public float RemainingNormalized => IsActive ? Mathf.Clamp01(remainingDuration / TotalDuration) : 0f;
+    public float RemainingSeconds => IsActive ? Mathf.Max(0f, remainingDuration) : 0f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics()
@@ -52,11 +56,20 @@ public sealed class TankShieldUltimate : MonoBehaviour
         shooter = GetComponent<TankShooter>();
         IsActive = true;
         ActivePlateCount = 0;
+        remainingDuration = TotalDuration;
         controller?.SetMovementLocked(true);
         health?.SetDamageBlocked(true);
         shooter?.SetFireRateMultiplier(5f);
         routine = StartCoroutine(RunShield());
         return true;
+    }
+
+    private void Update()
+    {
+        if (IsActive)
+        {
+            remainingDuration = Mathf.Max(0f, remainingDuration - Time.deltaTime);
+        }
     }
 
     private IEnumerator RunShield()
@@ -347,6 +360,7 @@ public sealed class TankShieldUltimate : MonoBehaviour
         controller?.SetMovementLocked(false);
         health?.SetDamageBlocked(false);
         shooter?.SetFireRateMultiplier(1f);
+        remainingDuration = 0f;
         IsActive = false;
     }
 }

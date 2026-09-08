@@ -107,10 +107,11 @@ public sealed class TankWorldHealthBar : MonoBehaviour
         background.raycastTarget = false;
 
         fillImage = GetOrCreateImage(canvasRect, "Fill");
-        fillImage.rectTransform.anchorMin = Vector2.zero;
-        fillImage.rectTransform.anchorMax = Vector2.one;
-        fillImage.rectTransform.offsetMin = new Vector2(0.08f, 0.06f);
-        fillImage.rectTransform.offsetMax = new Vector2(-0.08f, -0.06f);
+        fillImage.sprite = BrushBarSpriteFactory.Horizontal;
+        fillImage.type = Image.Type.Simple;
+        fillImage.rectTransform.anchorMin = fillImage.rectTransform.anchorMax = new Vector2(0f, .5f);
+        fillImage.rectTransform.pivot = new Vector2(0f, .5f);
+        fillImage.rectTransform.anchoredPosition = new Vector2(.08f, 0f);
         fillImage.color = new Color(0.15f, 0.9f, 0.15f, 1f);
         fillImage.raycastTarget = false;
 
@@ -161,10 +162,7 @@ public sealed class TankWorldHealthBar : MonoBehaviour
         }
 
         RectTransform fillRect = fillImage.rectTransform;
-        fillRect.anchorMin = new Vector2(0f, 0f);
-        fillRect.anchorMax = new Vector2(target.Normalized, 1f);
-        fillRect.offsetMin = new Vector2(0.08f, 0.06f);
-        fillRect.offsetMax = new Vector2(-0.08f, -0.06f);
+        fillRect.sizeDelta = new Vector2((Width - .16f) * target.Normalized, Height - .12f);
         fillImage.gameObject.SetActive(target.IsAlive);
     }
 

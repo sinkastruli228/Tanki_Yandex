@@ -20,11 +20,11 @@ public sealed class MainMenuController : MonoBehaviour
     public int PreviewSkin => skin;
     public bool IsBusy => busy;
 
-    public void Configure(GarageMenuView menu, Camera camera, GameObject tank)
+    public void Configure(GarageMenuView menu, Camera camera, GameObject tank, bool startBattleImmediately = false, int startSkin = -1, bool startInfinite = false)
     {
         view = menu; sceneCamera = camera; player = tank;
         parking = player.transform.position; playerRotation = player.transform.rotation;
-        skin = TankGarageProgress.SelectedSkin;
+        skin = startSkin >= 0 ? startSkin : TankGarageProgress.SelectedSkin;
         view.Play = () => BeginBattle(false); view.Infinite = () => BeginBattle(true);
         view.Previous = () => ChangeSkin(-1); view.Next = () => ChangeSkin(1);
         view.Buy = () => { if (!busy && TankGarageProgress.TryBuy(skin)) Refresh(); };
@@ -40,7 +40,19 @@ public sealed class MainMenuController : MonoBehaviour
         GameplayPointer.ClearOverride();
         Cursor.visible = true; Cursor.lockState = CursorLockMode.None;
         PlaceCamera(); Refresh();
-        StartCoroutine(OpenGarage());
+        if (startBattleImmediately) BeginBattleImmediately(startInfinite);
+        else StartCoroutine(OpenGarage());
+    }
+
+    private void BeginBattleImmediately(bool infinite)
+    {
+        StopAllCoroutines();
+        GameObject hud = TankiGameplayBootstrap.PrepareBattleFromGarage(skin, infinite);
+        hud.SetActive(true);
+        view.gameObject.SetActive(false);
+        playing = true;
+        busy = false;
+        TankiGameplayBootstrap.FinishBattleFromGarage();
     }
 
     private void Refresh() { if (view != null) view.Refresh(skin, busy); }
@@ -227,7 +239,7 @@ public sealed class MainMenuController : MonoBehaviour
         var pieces = new List<GarageMenuView.Travel>();
         foreach (Transform child in hud.transform)
         {
-            if (child.name == "Health Bar Background" || child.name == "Nitro Bar Background" || child.name == "Special Charge Background")
+            if (child.name == "Health Bar Background" || child.name == "Nitro Bar Background" || child.name == "Special Charge Background" || child.name == "Battle Progress Background")
             {
                 var rect = child as RectTransform;
                 pieces.Add(new GarageMenuView.Travel { rect = rect, home = rect.anchoredPosition, side = rect.anchorMin.x >= .75f ? 1 : -1 });

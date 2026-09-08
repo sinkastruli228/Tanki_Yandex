@@ -12,10 +12,10 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
     private const float MapHeight = 600f;
     private const float BrushDiameter = 46f;
     private const float StampSpacing = 14f;
-    private const int MaximumStamps = 82;
+    private const int MaximumStamps = 41;
     private const int MaximumImpacts = 48;
     private const float ImpactInterval = .13f;
-    private const float BlastRadius = 15f;
+    private const float BlastRadius = 10.5f;
     private const int BlastDamage = 100;
     private const float CursorRecenterDuration = .32f;
 
@@ -43,11 +43,13 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
     private RectTransform markerLayer;
     private RawImage mapImage;
     private Image inkFill;
+    private RectTransform inkFillRect;
+    private float inkFillMaxHeight;
     private Text inkCounter;
     private Text plannerTitle;
-    private Text plannerHint;
+    private Text liveLabel;
+    private Image liveDot;
     private Text inkTitle;
-    private Text inkHint;
     private Text confirmLabel;
     private Text clearLabel;
     private Text cancelLabel;
@@ -158,6 +160,13 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
         foreach (RectTransform marker in enemyMarkers)
         {
             if (marker != null && marker.gameObject.activeSelf) marker.localScale = Vector3.one * pulse;
+        }
+
+        if (liveDot != null)
+        {
+            Color color = liveDot.color;
+            color.a = .32f + (.68f * (.5f + .5f * Mathf.Sin(Time.unscaledTime * 6.5f)));
+            liveDot.color = color;
         }
     }
 
@@ -382,7 +391,13 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
     private void UpdateInkUi()
     {
         float remaining = 1f - strokeWorldPoints.Count / (float)MaximumStamps;
-        if (inkFill != null) inkFill.fillAmount = Mathf.Clamp01(remaining);
+        remaining = Mathf.Clamp01(remaining);
+        if (inkFill != null)
+        {
+            inkFill.fillAmount = remaining;
+            inkFillRect.sizeDelta = new Vector2(38f, inkFillMaxHeight * remaining);
+            inkFill.enabled = remaining > .001f;
+        }
         if (inkCounter != null) inkCounter.text = Mathf.RoundToInt(remaining * 100f) + "%";
         if (confirmButton != null) confirmButton.interactable = strokeWorldPoints.Count > 0;
     }
@@ -684,8 +699,12 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
         AddPanel(headerIcon, Gold);
         AddText(headerIcon, "Numeral", "III", 20, Ink, Vector2.zero, headerIcon.sizeDelta, TextAnchor.MiddleCenter, true, new Vector2(.5f, .5f));
         plannerTitle = AddText(plannerPanel, "Title", string.Empty, 24, Cream, new Vector2(82f, -14f), new Vector2(360f, 30f), TextAnchor.MiddleLeft, true);
-        plannerHint = AddText(plannerPanel, "Hint", string.Empty, 13, Muted, new Vector2(82f, -40f), new Vector2(690f, 22f), TextAnchor.MiddleLeft);
-        Text live = AddText(plannerPanel, "Live Badge", "LIVE  •  ORTHO", 12, Gold, new Vector2(949f, -24f), new Vector2(175f, 24f), TextAnchor.MiddleCenter, true);
+        liveLabel = AddText(plannerPanel, "Live Badge", "LIVE", 12, Gold, new Vector2(1016f, -24f), new Vector2(82f, 24f), TextAnchor.MiddleRight, true);
+        RectTransform liveDotRect = CreateRect(plannerPanel, "Live Dot", new Vector2(0f, 1f), new Vector2(1112f, -31f), new Vector2(10f, 10f), new Vector2(.5f, .5f));
+        liveDot = liveDotRect.gameObject.AddComponent<Image>();
+        liveDot.sprite = circleSprite;
+        liveDot.color = new Color(1f, .12f, .06f, 1f);
+        liveDot.raycastTarget = false;
 
         RectTransform mapFrame = CreateRect(plannerPanel, "Map Frame", new Vector2(0f, 1f), new Vector2(20f, -70f), new Vector2(820f, 620f), new Vector2(0f, 1f));
         AddPanel(mapFrame, Teal);
@@ -708,23 +727,19 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
 
         RectTransform barTrack = CreateRect(side, "Ink Track", new Vector2(.5f, 1f), new Vector2(0f, -65f), new Vector2(54f, 310f), new Vector2(.5f, 1f));
         AddPanel(barTrack, new Color(.095f, .14f, .14f, 1f));
-        RectTransform fillRect = CreateStretchRect(barTrack, "Ink Fill");
-        fillRect.offsetMin = new Vector2(8f, 8f);
-        fillRect.offsetMax = new Vector2(-8f, -8f);
-        inkFill = fillRect.gameObject.AddComponent<Image>();
-        inkFill.sprite = roundedSprite;
-        inkFill.type = Image.Type.Filled;
-        inkFill.fillMethod = Image.FillMethod.Vertical;
-        inkFill.fillOrigin = (int)Image.OriginVertical.Bottom;
+        inkFillRect = CreateRect(barTrack, "Ink Fill", new Vector2(.5f, 0f), new Vector2(0f, 8f), new Vector2(38f, 294f), new Vector2(.5f, 0f));
+        inkFillMaxHeight = 294f;
+        inkFill = inkFillRect.gameObject.AddComponent<Image>();
+        inkFill.sprite = BrushBarSpriteFactory.Vertical;
+        inkFill.type = Image.Type.Simple;
         inkFill.color = Gold;
         inkFill.raycastTarget = false;
 
         inkCounter = AddText(side, "Ink Counter", "100%", 25, Gold, new Vector2(22f, -388f), new Vector2(238f, 34f), TextAnchor.MiddleCenter, true);
-        inkHint = AddText(side, "Ink Hint", string.Empty, 12, Muted, new Vector2(24f, -429f), new Vector2(234f, 45f), TextAnchor.UpperCenter);
 
-        confirmButton = AddButton(side, "Confirm Strike", string.Empty, new Vector2(22f, -490f), new Vector2(238f, 48f), Gold, Ink, () => SubmitStrike(), out confirmLabel);
-        AddButton(side, "Clear Route", string.Empty, new Vector2(22f, -546f), new Vector2(114f, 42f), Teal, Cream, ClearStroke, out clearLabel);
-        AddButton(side, "Cancel", string.Empty, new Vector2(146f, -546f), new Vector2(114f, 42f), Teal, Cream, CancelPlanning, out cancelLabel);
+        confirmButton = AddButton(side, "Confirm Strike", string.Empty, new Vector2(22f, -438f), new Vector2(238f, 48f), Gold, Ink, () => SubmitStrike(), out confirmLabel);
+        AddButton(side, "Clear Route", string.Empty, new Vector2(22f, -494f), new Vector2(114f, 42f), Teal, Cream, ClearStroke, out clearLabel);
+        AddButton(side, "Cancel", string.Empty, new Vector2(146f, -494f), new Vector2(114f, 42f), Teal, Cream, CancelPlanning, out cancelLabel);
         root.SetActive(false);
         RefreshLocalizedCopy();
     }
@@ -733,9 +748,8 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
     {
         if (plannerTitle == null) return;
         plannerTitle.text = GameLanguage.Text("БОМБАРДИРОВКА", "BOMBARDMENT");
-        plannerHint.text = GameLanguage.Text("Зажми ЛКМ и нарисуй зону удара", "Hold LMB and paint the strike zone");
+        liveLabel.text = "LIVE";
         inkTitle.text = GameLanguage.Text("ЛИМИТ МАРШРУТА", "ROUTE LIMIT");
-        inkHint.text = GameLanguage.Text("Красная полоса — зона падения снарядов", "The red trail marks the shell impact zone");
         confirmLabel.text = GameLanguage.Text("НАЧАТЬ УДАР", "CALL STRIKE");
         clearLabel.text = GameLanguage.Text("ОЧИСТИТЬ", "CLEAR");
         cancelLabel.text = GameLanguage.Text("ESC  НАЗАД", "ESC  BACK");

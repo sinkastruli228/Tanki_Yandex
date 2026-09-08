@@ -9,6 +9,7 @@ public sealed class TankHealth : MonoBehaviour
     [SerializeField] private int currentHealth = 100;
     [SerializeField] private bool destroyOnDeath = true;
     private bool damageBlocked;
+    private int baseMaxHealth;
 
     public event Action<TankHealth> Changed;
     public event Action<TankHealth, int> Damaged;
@@ -20,23 +21,26 @@ public sealed class TankHealth : MonoBehaviour
     public bool IsAlive => currentHealth > 0;
     public bool IsDamageBlocked => damageBlocked;
     public float Normalized => maxHealth > 0 ? Mathf.Clamp01((float)currentHealth / maxHealth) : 0f;
+    public int BaseMaxHealth => baseMaxHealth > 0 ? baseMaxHealth : maxHealth;
 
     private void Awake()
     {
         currentHealth = Mathf.Clamp(currentHealth, 0, maxHealth);
+        if (baseMaxHealth <= 0) baseMaxHealth = maxHealth;
     }
 
     public void Configure(TankTeam newTeam, int newMaxHealth, bool shouldDestroyOnDeath)
     {
         team = newTeam;
         maxHealth = Mathf.Max(1, newMaxHealth);
+        baseMaxHealth = maxHealth;
         currentHealth = maxHealth;
         damageBlocked = false;
         destroyOnDeath = shouldDestroyOnDeath;
         Changed?.Invoke(this);
     }
 
-    public void TakeDamage(int damage)
+    public void TakeDamage(int damage, bool critical = false)
     {
         if (damage <= 0 || currentHealth <= 0 || damageBlocked)
         {
@@ -49,7 +53,7 @@ public sealed class TankHealth : MonoBehaviour
         Damaged?.Invoke(this, appliedDamage);
         if (team == TankTeam.Enemy)
         {
-            EnemyDamageNumberDisplay.Show(this, appliedDamage);
+            EnemyDamageNumberDisplay.Show(this, appliedDamage, critical);
         }
         Changed?.Invoke(this);
 
@@ -66,6 +70,14 @@ public sealed class TankHealth : MonoBehaviour
     public void SetDamageBlocked(bool blocked)
     {
         damageBlocked = blocked;
+    }
+
+    public void SetBattleMaxHealthMultiplier(float multiplier)
+    {
+        int previousMax = maxHealth;
+        maxHealth = Mathf.Max(1, Mathf.RoundToInt(BaseMaxHealth * Mathf.Max(1f, multiplier)));
+        currentHealth = Mathf.Min(maxHealth, currentHealth + Mathf.Max(0, maxHealth - previousMax));
+        Changed?.Invoke(this);
     }
 
     public void Heal(int amount)

@@ -45,9 +45,10 @@ public sealed class TankCombatRewards : MonoBehaviour
         }
     }
 
-    public void RegisterKill()
+    public void RegisterKill(bool killedWithCritical = false)
     {
         TankGarageProgress.AddCoins(UnityEngine.Random.Range(MinimumKillCoins, MaximumKillCoinsInclusive + 1));
+        GetComponent<TankBattleProgression>()?.RegisterEnemyKill(killedWithCritical);
         if (!specialArmed)
         {
             specialCharge = Mathf.Min(1f, specialCharge + ChargePerKill);

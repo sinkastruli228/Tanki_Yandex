@@ -13,17 +13,33 @@ public sealed class PlayerHealthBar : MonoBehaviour
     [SerializeField] private RectTransform fillRect;
     [SerializeField] private GameObject gameOverPanel;
     [SerializeField] private Button restartButton;
+    [SerializeField] private Button menuButton;
     [SerializeField] private Image gameplayCursorImage;
+    [SerializeField] private Text healthValue;
 
     private bool gameOverShown;
+    private float fillMaxWidth;
+    private float fillHeight;
 
-    public void Configure(TankHealth playerHealth, Image healthFill, GameObject gameOverRoot, Button restart, Image cursorImage)
+    public bool IsGameOverShown => gameOverShown;
+
+    public void Configure(TankHealth playerHealth, Image healthFill, Text valueLabel, GameObject gameOverRoot, Button restart, Button menu, Image cursorImage)
     {
         target = playerHealth;
         fillImage = healthFill;
         fillRect = healthFill != null ? healthFill.rectTransform : null;
+        if (fillRect != null && fillRect.parent is RectTransform trackRect)
+        {
+            fillMaxWidth = Mathf.Max(0f, trackRect.rect.width - 8f);
+            fillHeight = Mathf.Max(1f, trackRect.rect.height - 4f);
+            fillRect.anchorMin = fillRect.anchorMax = new Vector2(0f, .5f);
+            fillRect.pivot = new Vector2(0f, .5f);
+            fillRect.anchoredPosition = new Vector2(4f, 0f);
+        }
+        healthValue = valueLabel;
         gameOverPanel = gameOverRoot;
         restartButton = restart;
+        menuButton = menu;
         gameplayCursorImage = cursorImage;
         gameOverShown = false;
         GameplayInputBlocked = false;
@@ -37,6 +53,12 @@ public sealed class PlayerHealthBar : MonoBehaviour
         {
             restartButton.onClick.RemoveListener(RestartScene);
             restartButton.onClick.AddListener(RestartScene);
+        }
+
+        if (menuButton != null)
+        {
+            menuButton.onClick.RemoveListener(ReturnToMenu);
+            menuButton.onClick.AddListener(ReturnToMenu);
         }
 
         UpdateVisual();
@@ -56,15 +78,11 @@ public sealed class PlayerHealthBar : MonoBehaviour
             return;
         }
 
-        fillRect.anchorMin = Vector2.zero;
-        fillRect.anchorMax = Vector2.one;
-        fillRect.offsetMin = Vector2.zero;
-        fillRect.offsetMax = Vector2.zero;
-        fillImage.type = Image.Type.Filled;
-        fillImage.fillMethod = Image.FillMethod.Vertical;
-        fillImage.fillOrigin = (int)Image.OriginVertical.Bottom;
+        fillImage.type = Image.Type.Simple;
         fillImage.fillAmount = target.Normalized;
-        fillImage.color = Color.white;
+        fillRect.sizeDelta = new Vector2(fillMaxWidth * target.Normalized, fillHeight);
+        fillImage.enabled = target.Normalized > .001f;
+        if (healthValue != null) healthValue.text = $"{target.CurrentHealth} / {target.MaxHealth}";
 
         bool isGameOver = !target.IsAlive;
         if (gameOverPanel != null)
@@ -81,10 +99,13 @@ public sealed class PlayerHealthBar : MonoBehaviour
     private void ShowGameOver()
     {
         gameOverShown = true;
+        GameplayInputBlocked = true;
         SetPlayerControlEnabled(false);
         SetCameraFrozen(true);
-        Time.timeScale = 0f;
+        Time.timeScale = 1f;
         SetGameplayCursorActive(false);
+        if (gameOverPanel != null) gameOverPanel.transform.SetAsLastSibling();
+        FindFirstObjectByType<SceneAudioController>()?.StopMusicForDefeat();
     }
 
     private void SetGameplayCursorActive(bool isActive)
@@ -145,6 +166,15 @@ public sealed class PlayerHealthBar : MonoBehaviour
         {
             shooter.enabled = isEnabled;
         }
+
+        TankTurretAim turretAim = target.GetComponent<TankTurretAim>();
+        if (turretAim != null) turretAim.enabled = isEnabled;
+        TankAimLaser aimLaser = target.GetComponent<TankAimLaser>();
+        if (aimLaser != null) aimLaser.enabled = isEnabled;
+        TankNitro nitro = target.GetComponent<TankNitro>();
+        if (nitro != null) nitro.enabled = isEnabled;
+        TankSpecialWeapon specialWeapon = target.GetComponent<TankSpecialWeapon>();
+        if (specialWeapon != null) specialWeapon.enabled = isEnabled;
     }
 
     private static void SetCameraFrozen(bool isFrozen)
@@ -161,25 +191,28 @@ public sealed class PlayerHealthBar : MonoBehaviour
 
     private void TryHandleRestartClickFallback()
     {
-        if (!gameOverShown || restartButton == null || Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame)
+        if (!gameOverShown || Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame)
         {
             return;
         }
 
-        RectTransform restartRect = restartButton.transform as RectTransform;
-        if (restartRect == null)
-        {
-            return;
-        }
-
-        if (RectTransformUtility.RectangleContainsScreenPoint(restartRect, Mouse.current.position.ReadValue(), null))
+        Vector2 position = Mouse.current.position.ReadValue();
+        RectTransform restartRect = restartButton != null ? restartButton.transform as RectTransform : null;
+        RectTransform menuRect = menuButton != null ? menuButton.transform as RectTransform : null;
+        if (restartRect != null && RectTransformUtility.RectangleContainsScreenPoint(restartRect, position, null))
         {
             RestartScene();
+        }
+        else if (menuRect != null && RectTransformUtility.RectangleContainsScreenPoint(menuRect, position, null))
+        {
+            ReturnToMenu();
         }
     }
 
     private static void RestartScene()
     {
-        TankiGameplayBootstrap.RestartGameplayScene();
+        TankiGameplayBootstrap.RestartCurrentBattle();
     }
+
+    private static void ReturnToMenu() => TankiGameplayBootstrap.ReturnToMainMenu();
 }

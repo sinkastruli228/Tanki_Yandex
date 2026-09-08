@@ -22,6 +22,7 @@ public sealed class TankController : MonoBehaviour
     private float planeY;
     private float currentSpeed;
     private float speedMultiplier = 1f;
+    private float battleSpeedMultiplier = 1f;
     private bool useExternalInput;
     private float externalThrottle;
     private float externalTurn;
@@ -32,6 +33,7 @@ public sealed class TankController : MonoBehaviour
     public float CurrentSpeed => currentSpeed;
     public float CurrentSpeedNormalized => Mathf.Clamp01(Mathf.Abs(currentSpeed) / Mathf.Max(0.01f, Mathf.Max(forwardSpeed, reverseSpeed)));
     public bool MovementLocked => movementLocked;
+    public float BattleSpeedMultiplier => battleSpeedMultiplier;
 
     private void Reset()
     {
@@ -54,6 +56,11 @@ public sealed class TankController : MonoBehaviour
     public void SetSpeedMultiplier(float multiplier)
     {
         speedMultiplier = Mathf.Max(1f, multiplier);
+    }
+
+    public void SetBattleSpeedMultiplier(float multiplier)
+    {
+        battleSpeedMultiplier = Mathf.Max(1f, multiplier);
     }
 
     public void RefreshMovementPlane()
@@ -106,12 +113,12 @@ public sealed class TankController : MonoBehaviour
             turn = -turn;
         }
 
-        Quaternion proposedRotation = body.rotation * Quaternion.Euler(0f, turn * turnSpeed * Time.fixedDeltaTime, 0f);
+        Quaternion proposedRotation = body.rotation * Quaternion.Euler(0f, turn * turnSpeed * battleSpeedMultiplier * Time.fixedDeltaTime, 0f);
         Quaternion nextRotation = WouldOverlapStaticWall(body.position, proposedRotation) ? body.rotation : proposedRotation;
         body.MoveRotation(nextRotation);
 
-        float targetSpeed = (throttle >= 0f ? throttle * forwardSpeed : throttle * reverseSpeed) * speedMultiplier;
-        currentSpeed = Mathf.MoveTowards(currentSpeed, targetSpeed, acceleration * Time.fixedDeltaTime);
+        float targetSpeed = (throttle >= 0f ? throttle * forwardSpeed : throttle * reverseSpeed) * speedMultiplier * battleSpeedMultiplier;
+        currentSpeed = Mathf.MoveTowards(currentSpeed, targetSpeed, acceleration * battleSpeedMultiplier * Time.fixedDeltaTime);
 
         Vector3 movementDirection = TankPlaneMath.Flatten(nextRotation * LocalForwardAxis);
         Vector3 movement = movementDirection * (currentSpeed * Time.fixedDeltaTime);
@@ -143,6 +150,7 @@ public sealed class TankController : MonoBehaviour
         collisionSkin = Mathf.Max(0.01f, collisionSkin);
         pushRadius = Mathf.Max(0.05f, pushRadius);
         pushForce = Mathf.Max(0f, pushForce);
+        battleSpeedMultiplier = Mathf.Max(1f, battleSpeedMultiplier);
     }
 
     private Vector3 ClampMovementAgainstObstacles(Vector3 movement)
