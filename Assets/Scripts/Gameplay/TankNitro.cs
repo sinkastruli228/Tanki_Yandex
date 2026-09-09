@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 [DisallowMultipleComponent]
 public sealed class TankNitro : MonoBehaviour
@@ -47,8 +46,7 @@ public sealed class TankNitro : MonoBehaviour
 
     private void Update()
     {
-        Keyboard keyboard = Keyboard.current;
-        bool wantsBoost = keyboard != null && keyboard.eKey.isPressed && controller != null && controller.enabled;
+        bool wantsBoost = TankiInput.BoostHeld && controller != null && controller.enabled;
         IsBoosting = wantsBoost && amount > 0.001f;
 
         if (IsBoosting)

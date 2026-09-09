@@ -34,7 +34,7 @@ public static class GameLanguage
         { "НАСТРОЙКИ", "SETTINGS" }, { "ВЫХОД", "EXIT" }, { "НАЗАД", "BACK" },
         { "Аркадные танковые сражения", "Arcade tank battles" },
         { "ЗВУК: ВЫКЛ", "SOUND: OFF" }, { "ЗВУК: ВКЛ", "SOUND: ON" },
-        { "WASD — движение\nМышь — башня и выстрел\nEsc — вернуться в меню", "WASD — move\nMouse — aim and fire\nEsc — return to menu" },
+        { "WASD — движение\nПробел — нитро, E — ульта\nМышь — башня и выстрел\nEsc — вернуться в меню", "WASD — move\nSpace — nitro, E — ultimate\nMouse — aim and fire\nEsc — return to menu" },
         { "СЕКРЕТНЫЙ ТАНК", "SECRET TANK" }, { "ЛЕСНОЙ", "FOREST" }, { "ПУСТЫННЫЙ", "DESERT" }, { "ПОЛЯРНЫЙ", "POLAR" },
         { "Тяжёлая броня. Большие планы.", "Heavy armor. Big plans." },
         { "Классическая зелёная броня", "Classic green armor" }, { "Тёплая палитра песчаных дюн", "Warm colors of the desert dunes" },

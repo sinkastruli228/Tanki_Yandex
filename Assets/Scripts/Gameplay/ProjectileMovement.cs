@@ -378,17 +378,9 @@ public sealed class ProjectileMovement : MonoBehaviour
 
     private void DamageTank(TankHealth health, Vector3 hitPoint)
     {
-        health.TakeDamage(damage, criticalHit);
+        health.TakeDamage(damage, criticalHit, owner);
         bool fatal = !health.IsAlive;
         NotifyTankDamaged(hitPoint, fatal);
-        if (fatal && ownerTeam == TankTeam.Player && owner != null)
-        {
-            TankCombatRewards rewards = owner.GetComponent<TankCombatRewards>();
-            if (rewards != null)
-            {
-                rewards.RegisterKill(criticalHit);
-            }
-        }
     }
 
     public static void NotifyTankDamaged(Vector3 hitPoint, bool fatal)

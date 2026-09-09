@@ -60,10 +60,9 @@ public sealed class TankSelectionMenu : MonoBehaviour
     public void ShowSelection()
     {
         hasSelection = false;
-        PlayerHealthBar.GameplayInputBlocked = true;
+        GameplayModalState.Set(GameplayBlockReason.LegacyTankSelection, true, true);
         SetPlayerControlEnabled(false);
         HideWaveAnnouncement();
-        Time.timeScale = 0f;
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
 
@@ -111,8 +110,7 @@ public sealed class TankSelectionMenu : MonoBehaviour
             panelRoot.SetActive(false);
         }
 
-        PlayerHealthBar.GameplayInputBlocked = false;
-        Time.timeScale = 1f;
+        GameplayModalState.Set(GameplayBlockReason.LegacyTankSelection, false, true);
         SetPlayerControlEnabled(true);
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.None;

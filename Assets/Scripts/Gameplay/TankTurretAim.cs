@@ -43,12 +43,21 @@ public sealed class TankTurretAim : MonoBehaviour
     {
         Transform targetTurret = turret != null ? turret : transform;
         Camera cameraToUse = aimCamera != null ? aimCamera : Camera.main;
-        if (cameraToUse == null || !TryGetMousePointOnPlane(cameraToUse, targetTurret.position.y, out Vector3 mousePoint))
+        if (cameraToUse == null)
         {
             return;
         }
 
-        Vector3 desiredDirection = mousePoint - targetTurret.position;
+        Vector3 desiredDirection;
+        if (!TankiInput.TryGetGamepadAimDirection(cameraToUse, out desiredDirection))
+        {
+            if (!TryGetMousePointOnPlane(cameraToUse, targetTurret.position.y, out Vector3 mousePoint))
+            {
+                return;
+            }
+
+            desiredDirection = mousePoint - targetTurret.position;
+        }
         desiredDirection.y = 0f;
         if (desiredDirection.sqrMagnitude < 0.001f)
         {

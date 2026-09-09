@@ -1,6 +1,5 @@
 using System;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 [DisallowMultipleComponent]
 public sealed class TankShooter : MonoBehaviour
@@ -10,6 +9,7 @@ public sealed class TankShooter : MonoBehaviour
     private const int PlayerCriticalDamageMin = 38;
     private const int PlayerCriticalDamageMaxInclusive = 50;
     private const float PlayerCriticalChance = .15f;
+    private const float PlayerBaselineDamage = 25f;
 
     [SerializeField] private Transform turret;
     [SerializeField] private Transform muzzlePoint;
@@ -87,8 +87,7 @@ public sealed class TankShooter : MonoBehaviour
 
     private void Update()
     {
-        Mouse mouse = Mouse.current;
-        if (mouse != null && mouse.leftButton.isPressed)
+        if (TankiInput.FireHeld)
         {
             specialWeapon = specialWeapon != null ? specialWeapon : GetComponent<TankSpecialWeapon>();
             if (specialWeapon != null && specialWeapon.TryHandleFire())
@@ -151,7 +150,8 @@ public sealed class TankShooter : MonoBehaviour
         int rolled = critical
             ? UnityEngine.Random.Range(PlayerCriticalDamageMin, PlayerCriticalDamageMaxInclusive + 1)
             : UnityEngine.Random.Range(PlayerNormalDamageMin, PlayerNormalDamageMaxInclusive + 1);
-        return Mathf.Max(1, Mathf.RoundToInt(rolled * battleUpgradeMultiplier));
+        float chassisDamageMultiplier = Mathf.Max(0f, damage) / PlayerBaselineDamage;
+        return Mathf.Max(1, Mathf.RoundToInt(rolled * chassisDamageMultiplier * battleUpgradeMultiplier));
     }
 
     private void OnValidate()

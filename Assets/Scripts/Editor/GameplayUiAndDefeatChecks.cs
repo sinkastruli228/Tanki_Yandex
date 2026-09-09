@@ -107,6 +107,8 @@ public static class GameplayUiAndDefeatChecks
         Check(nitroDisplay.FillImage.type == Image.Type.Simple && nitroDisplay.FillImage.sprite.name.Contains("Brush"), "Nitro uses an unclipped brush-stroke fill");
         Image ultimateFill = GameObject.Find("Special Charge Fill")?.GetComponent<Image>();
         Check(ultimateFill != null && ultimateFill.type == Image.Type.Simple && ultimateFill.sprite.name.Contains("Brush"), "Ultimate uses the same brush-stroke fill");
+        Text ultimateShortcut = GameObject.Find("E Shortcut")?.transform.Find("Label")?.GetComponent<Text>();
+        Check(ultimateShortcut != null && ultimateShortcut.text == "E", "Ultimate HUD shows the E keyboard shortcut");
 
         TankBattleProgression progression = health.GetComponent<TankBattleProgression>();
         Check(progression != null && progression.Level == 1 && TankBattleProgression.MaximumUpgradeTier == 5, "Battle progression starts at level 1 with five tiers per branch");
@@ -114,12 +116,21 @@ public static class GameplayUiAndDefeatChecks
         Check(TankBattleProgression.BaseKillExperience == 100 && TankBattleProgression.CriticalKillBonusExperience == 50, "Kills grant 100 XP and critical kills add 50 XP");
         Check(progression.ExperienceFill != null && progression.ExperienceFill.sprite.name.Contains("Brush"), "Top-center experience bar matches the brush-stroke HUD style");
         float[] expectedBonuses = { .5f, .4f, .3f, .2f, .1f };
+        int[] expectedExperienceGrowth = { 50, 40, 30, 20, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 };
         float[] expectedMobilityBonuses = { .10f, .08f, .06f, .04f, .02f };
         for (int i = 0; i < expectedBonuses.Length; i++)
         {
+            Check(Mathf.Approximately(TankBattleProgression.GetCannonTierBonus(i), .5f), $"Cannon tier {i + 1} grants 50 percent to normal and critical damage");
             Check(Mathf.Approximately(TankBattleProgression.GetTierBonus(i), expectedBonuses[i]), $"Upgrade tier {i + 1} grants the configured descending bonus");
             Check(Mathf.Approximately(TankBattleProgression.GetMobilityTierBonus(i), expectedMobilityBonuses[i]), $"Mobility tier {i + 1} grants the configured speed and nitro bonus");
         }
+        for (int i = 0; i < expectedExperienceGrowth.Length; i++)
+        {
+            Check(TankBattleProgression.GetExperienceRequirementGrowthPercent(i + 1) == expectedExperienceGrowth[i], $"XP requirement growth at level {i + 1} follows the non-doubling curve");
+        }
+        Check(TankBattleProgression.CalculateNextExperienceRequirement(100, 1) == 150
+            && TankBattleProgression.CalculateNextExperienceRequirement(150, 2) == 210,
+            "XP requirement starts with 100, 150, and 210 instead of doubling");
 
         TankShooter playerShooter = health.GetComponent<TankShooter>();
         MethodInfo rollDamage = typeof(TankShooter).GetMethod("RollShotDamage", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -163,13 +174,41 @@ public static class GameplayUiAndDefeatChecks
         float baseProjectileSpeed = playerShooter.EffectiveProjectileSpeed;
         float baseCooldown = playerShooter.EffectiveShotCooldown;
         float baseNitroCapacity = health.GetComponent<TankNitro>().Capacity;
+        GameObject scalingEnemy = new GameObject("Level Scaling Check Enemy", typeof(Rigidbody));
+        TankController scalingController = scalingEnemy.AddComponent<TankController>();
+        TankHealth scalingHealth = scalingEnemy.AddComponent<TankHealth>();
+        scalingHealth.Configure(TankTeam.Enemy, 100, false);
+        StaticEnemyTank scalingAi = scalingEnemy.AddComponent<StaticEnemyTank>();
+        scalingAi.Configure(health, null, null, null, 0f, 40, 0f, 0f, 1f, Vector3.forward);
+        TankWorldHealthBar scalingBar = scalingEnemy.AddComponent<TankWorldHealthBar>();
+        scalingBar.Configure(scalingHealth, Camera.main);
+        EnemyLevelScaling.ApplyToEnemy(scalingEnemy);
+        Check(scalingHealth.MaxHealth == 100 && scalingBar.SegmentCount == 1, "Enemy starts at its base stats and with one health-bar section");
+        scalingHealth.TakeDamage(40);
         progression.RegisterEnemyKill(false);
-        Check(progression.Level == 2 && progression.Experience == 0 && progression.ExperienceRequired == 200, "A normal kill reaches level 2 and doubles the next XP requirement");
+        Check(progression.Level == 2 && progression.Experience == 0 && progression.ExperienceRequired == 150, "A normal kill reaches level 2 and grows the next XP requirement by 50 percent");
+        Check(Mathf.Approximately(EnemyLevelScaling.CurrentMultiplier, 1.2f)
+            && scalingHealth.MaxHealth == 120
+            && scalingHealth.CurrentHealth == 72
+            && Mathf.Approximately(scalingController.BattleSpeedMultiplier, 1f)
+            && scalingAi.EffectiveDamage == 48,
+            "Level 2 raises enemy health and damage by 20 percent without changing speed");
+        Check(scalingBar.SegmentCount == 2, "Enemy health above 100 is split into multiple visible sections");
         Check(progression.IsSelectionOpen && Time.timeScale == 0f, "Level-up pauses and darkens the battle for an upgrade choice");
+        Check(progression.IsSelectionAnimating, "Upgrade selection enters from above with an unscaled-time bounce");
+        Transform selectorPanel = progression.ChoiceRoot.transform.Find("Upgrade Card Panel");
+        Check(selectorPanel != null && ((RectTransform)selectorPanel).anchoredPosition.y > 500f, "Upgrade panel starts above the screen");
+        Text firstDescription = selectorPanel?.Find("Upgrade Card 1/Description")?.GetComponent<Text>();
+        Text firstAction = selectorPanel?.Find("Upgrade Card 1/Bonus/Text")?.GetComponent<Text>();
+        Check(firstDescription != null && !firstDescription.gameObject.activeSelf, "Upgrade cards hide their short descriptions");
+        Check(firstAction != null && firstAction.text == GameLanguage.Text("ПРОКАЧАТЬ", "UPGRADE"), "Upgrade buttons use a clear action label instead of percentages");
         Transform tierScale = progression.ChoiceRoot.transform.Find("Upgrade Card Panel/Upgrade Card 1/Tier Scale");
         Check(tierScale != null && tierScale.childCount == 5, "Upgrade cards show a five-cell branch scale");
+        progression.CompleteSelectionAnimationForTests();
         int cannonCard = FindOffer(progression, TankUpgradeType.Cannon);
         progression.ChooseCard(cannonCard);
+        Check(progression.IsSelectionAnimating, "Choosing an upgrade starts the cell-fill and card-glow feedback");
+        progression.CompleteSelectionAnimationForTests();
         Check(progression.CannonTier == 1 && Mathf.Approximately(progression.WeaponMultiplier, 1.5f), "First cannon upgrade grants 50 percent");
         Check(Mathf.Approximately(playerShooter.EffectiveProjectileSpeed, baseProjectileSpeed) && Mathf.Approximately(playerShooter.EffectiveShotCooldown, baseCooldown), "Cannon upgrade changes damage without changing shell speed or reload");
         bool upgradedDamageValid = true;
@@ -185,16 +224,29 @@ public static class GameplayUiAndDefeatChecks
         Check(upgradedDamageValid, "Cannon percentage scales both normal and critical damage ranges");
 
         progression.RegisterEnemyKill(true);
-        Check(progression.Level == 2 && progression.Experience == 150 && !progression.IsSelectionOpen, "A critical kill grants 150 XP without skipping the 200 XP threshold");
-        progression.RegisterEnemyKill(false);
-        Check(progression.Level == 3 && progression.Experience == 50 && progression.ExperienceRequired == 400, "Overflow XP carries into the next bar when its requirement doubles");
+        Check(progression.Level == 3 && progression.Experience == 0 && progression.ExperienceRequired == 210, "A critical kill reaches the 150 XP threshold and advances to the 40-percent requirement step");
+        Check(Mathf.Approximately(EnemyLevelScaling.CurrentMultiplier, 1.44f)
+            && scalingHealth.MaxHealth == Mathf.RoundToInt(100f * 1.44f)
+            && scalingHealth.CurrentHealth == Mathf.RoundToInt(scalingHealth.MaxHealth * .6f)
+            && Mathf.Approximately(scalingController.BattleSpeedMultiplier, 1f)
+            && scalingAi.EffectiveDamage == Mathf.RoundToInt(40f * 1.44f),
+            "A second level-up compounds enemy health and damage while speed stays unchanged");
+        progression.CompleteSelectionAnimationForTests();
         progression.ChooseCard(FindOffer(progression, TankUpgradeType.Armor));
+        progression.CompleteSelectionAnimationForTests();
         Check(progression.ArmorTier == 1 && health.MaxHealth == Mathf.RoundToInt(health.BaseMaxHealth * 1.5f), "Armor upgrade increases maximum health and repairs the added capacity");
-        for (int i = 0; i < 4; i++) progression.RegisterEnemyKill(false);
+        progression.RegisterEnemyKill(false);
+        progression.RegisterEnemyKill(false);
+        Check(progression.Level == 3 && progression.Experience == 200 && !progression.IsSelectionOpen, "XP accumulates below the 210-point level-3 requirement");
+        progression.RegisterEnemyKill(false);
+        Check(progression.Level == 4 && progression.Experience == 90 && progression.ExperienceRequired == 273, "Overflow XP carries into the next bar using the 30-percent growth step");
+        progression.CompleteSelectionAnimationForTests();
         progression.ChooseCard(FindOffer(progression, TankUpgradeType.Mobility));
+        progression.CompleteSelectionAnimationForTests();
         Check(progression.MobilityTier == 1 && Mathf.Approximately(health.GetComponent<TankController>().BattleSpeedMultiplier, 1.1f), "First mobility upgrade improves normal tank speed by 10 percent");
         Check(Mathf.Approximately(health.GetComponent<TankNitro>().Capacity, baseNitroCapacity * 1.1f), "First mobility upgrade increases nitro capacity by 10 percent");
         Check(!progression.IsSelectionOpen && Time.timeScale > 0f && !PlayerHealthBar.GameplayInputBlocked, "Choosing an upgrade resumes the battle");
+        UnityEngine.Object.Destroy(scalingEnemy);
 
         GameplayCrosshairDisplay crosshair = GameObject.Find("Gameplay Cursor")?.GetComponent<GameplayCrosshairDisplay>();
         Check(crosshair != null && crosshair.ReloadFill != null && crosshair.CenterDiamond != null, "Variant 20 crosshair is assembled in the gameplay HUD");

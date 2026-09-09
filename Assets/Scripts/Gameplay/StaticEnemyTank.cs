@@ -40,6 +40,11 @@ public sealed class StaticEnemyTank : MonoBehaviour
     private float lastAvoidanceSide = 1f;
     private TankHealth ownHealth;
     private bool pursueBecauseDamaged;
+    private float levelDamageMultiplier = 1f;
+
+    public int BaseDamage => damage;
+    public float LevelDamageMultiplier => levelDamageMultiplier;
+    public int EffectiveDamage => Mathf.Max(0, Mathf.RoundToInt(damage * levelDamageMultiplier));
 
     public void Configure(
         TankHealth playerTarget,
@@ -84,6 +89,11 @@ public sealed class StaticEnemyTank : MonoBehaviour
     public void ConfigureLowerProjectileHitbox(bool enabled)
     {
         useLowerProjectileHitbox = enabled;
+    }
+
+    public void SetLevelDamageMultiplier(float multiplier)
+    {
+        levelDamageMultiplier = Mathf.Max(1f, multiplier);
     }
 
     private void Update()
@@ -400,7 +410,7 @@ public sealed class StaticEnemyTank : MonoBehaviour
             projectileMovement = projectile.AddComponent<ProjectileMovement>();
         }
 
-        projectileMovement.ConfigureDamage(TankTeam.Enemy, damage, gameObject);
+        projectileMovement.ConfigureDamage(TankTeam.Enemy, EffectiveDamage, gameObject);
         projectileMovement.ConfigureLowerHitbox(useLowerProjectileHitbox);
         projectileMovement.Launch(shotDirection, projectileSpeed, projectileForwardAxis);
         IgnoreOwnCollisions(projectile);

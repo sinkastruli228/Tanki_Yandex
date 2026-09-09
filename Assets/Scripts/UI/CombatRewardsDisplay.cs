@@ -104,7 +104,7 @@ public sealed class CombatRewardsDisplay : MonoBehaviour
                 : rewards.IsSpecialArmed
                     ? GameLanguage.Text("ВЫБЕРИ ЦЕЛЬ", "SELECT TARGET")
                     : rewards.IsFullyCharged
-                        ? GameLanguage.Text("НАЖМИ Q", "PRESS Q")
+                        ? GameLanguage.Text("НАЖМИ E", "PRESS E")
                         : GameLanguage.Text($"ЗАРЯД  {Mathf.RoundToInt(rewards.ChargeNormalized * 100f)}%", $"CHARGE  {Mathf.RoundToInt(rewards.ChargeNormalized * 100f)}%");
         }
 

@@ -68,13 +68,9 @@ public sealed class SpecialSpiralProjectile : MonoBehaviour
         bool fatal = false;
         if (target != null && target.IsAlive)
         {
-            target.TakeDamage(damage);
+            target.TakeDamage(damage, false, rewards != null ? rewards.gameObject : null);
             fatal = !target.IsAlive;
             ProjectileMovement.NotifyTankDamaged(lastTargetPoint, fatal);
-            if (fatal && rewards != null)
-            {
-                rewards.RegisterKill();
-            }
         }
 
         ImpactExplosion.Spawn(lastTargetPoint);

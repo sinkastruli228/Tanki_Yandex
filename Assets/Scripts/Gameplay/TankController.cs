@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Rigidbody))]
@@ -360,24 +359,7 @@ public sealed class TankController : MonoBehaviour
             return externalThrottle;
         }
 
-        Keyboard keyboard = Keyboard.current;
-        if (keyboard == null)
-        {
-            return 0f;
-        }
-
-        float throttle = 0f;
-        if (keyboard.wKey.isPressed)
-        {
-            throttle += 1f;
-        }
-
-        if (keyboard.sKey.isPressed)
-        {
-            throttle -= 1f;
-        }
-
-        return Mathf.Clamp(throttle, -1f, 1f);
+        return TankiInput.Move.y;
     }
 
     private float ReadTurn()
@@ -387,23 +369,6 @@ public sealed class TankController : MonoBehaviour
             return externalTurn;
         }
 
-        Keyboard keyboard = Keyboard.current;
-        if (keyboard == null)
-        {
-            return 0f;
-        }
-
-        float turn = 0f;
-        if (keyboard.dKey.isPressed)
-        {
-            turn += 1f;
-        }
-
-        if (keyboard.aKey.isPressed)
-        {
-            turn -= 1f;
-        }
-
-        return Mathf.Clamp(turn, -1f, 1f);
+        return TankiInput.Move.x;
     }
 }

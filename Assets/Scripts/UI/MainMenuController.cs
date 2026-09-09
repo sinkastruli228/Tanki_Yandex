@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.InputSystem;
+using UnityEngine.EventSystems;
 
 [DisallowMultipleComponent]
 public sealed class MainMenuController : MonoBehaviour
@@ -36,7 +36,8 @@ public sealed class MainMenuController : MonoBehaviour
         shotAudio.playOnAwake = false; shotAudio.spatialBlend = 0; shotAudio.volume = .35f;
         sceneCamera.GetComponent<TopDownCameraFollow>().enabled = false;
         player.SetActive(false);
-        Time.timeScale = 0; PlayerHealthBar.GameplayInputBlocked = true;
+        TankiPlatformServices.SetBattleActive(false);
+        GameplayModalState.Set(GameplayBlockReason.Garage, true, true);
         GameplayPointer.ClearOverride();
         Cursor.visible = true; Cursor.lockState = CursorLockMode.None;
         PlaceCamera(); Refresh();
@@ -58,9 +59,12 @@ public sealed class MainMenuController : MonoBehaviour
     private void Refresh() { if (view != null) view.Refresh(skin, busy); }
     private void Update()
     {
-        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+        if (TankiInput.CancelPressed)
         {
-            if (playing) TankiGameplayBootstrap.ReturnToMainMenu();
+            if (playing)
+            {
+                if (!GameplayModalState.IsInputBlocked) TankiGameplayBootstrap.ReturnToMainMenu();
+            }
             else if (!busy) view.ToggleSettings();
         }
         if (!busy && !playing && showcase != null && Mathf.Abs(framedAspect - sceneCamera.aspect) > .01f)
@@ -84,6 +88,10 @@ public sealed class MainMenuController : MonoBehaviour
         view.TravelTo(0, true);
         StartCoroutine(AnimateMenu(true));
         yield return SwitchSkin(skin, 1);
+        if (EventSystem.current != null && view.PlayButton != null)
+        {
+            EventSystem.current.SetSelectedGameObject(view.PlayButton.gameObject);
+        }
     }
     private void ChangeSkin(int direction)
     {

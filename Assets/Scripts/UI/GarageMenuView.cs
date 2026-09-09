@@ -167,7 +167,7 @@ public sealed class GarageMenuView : MonoBehaviour
             localizedLabels[sound.GetComponentInChildren<Text>()] = mute ? "ЗВУК: ВЫКЛ" : "ЗВУК: ВКЛ";
             RefreshLanguage();
         }, 20);
-        Label(settings, "Controls", "WASD — движение\nМышь — башня и выстрел\nEsc — вернуться в меню", 17, muted, new Vector2(28, -193), new Vector2(290, 96), TextAnchor.UpperLeft);
+        Label(settings, "Controls", "WASD — движение\nПробел — нитро, E — ульта\nМышь — башня и выстрел\nEsc — вернуться в меню", 17, muted, new Vector2(28, -193), new Vector2(290, 112), TextAnchor.UpperLeft);
         ActionButton(settings, "Close Settings", "НАЗАД", -326, new Color(.23f, .31f, .29f), cream, ToggleSettings, 20);
         SettingsPanel = settings.gameObject;
         SettingsPanel.SetActive(false);
@@ -265,7 +265,7 @@ public sealed class GarageMenuView : MonoBehaviour
         var button = rect.gameObject.AddComponent<Button>(); button.targetGraphic = image;
         var colors = button.colors; colors.highlightedColor = new Color(1.08f, 1.08f, 1.08f); colors.selectedColor = Color.white;
         colors.disabledColor = new Color(.66f, .66f, .66f, .72f); colors.fadeDuration = .12f; button.colors = colors;
-        var navigation = button.navigation; navigation.mode = Navigation.Mode.None; button.navigation = navigation;
+        var navigation = button.navigation; navigation.mode = Navigation.Mode.Automatic; button.navigation = navigation;
         button.onClick.AddListener(() => callback()); CenterLabel(rect, "Label", text, size, foreground, true);
         rect.gameObject.AddComponent<GarageUiMotion>(); return button;
     }

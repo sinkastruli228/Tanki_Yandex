@@ -17,6 +17,7 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
     private const float ImpactInterval = .13f;
     private const float BlastRadius = 10.5f;
     private const int BlastDamage = 100;
+    public const float DamageGrowthPerUpgradeTier = .4f;
     private const float CursorRecenterDuration = .32f;
 
     private static readonly Color Ink = new Color(.095f, .14f, .14f, .98f);
@@ -33,7 +34,6 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
     private readonly List<Vector3> strokeWorldPoints = new List<Vector3>(MaximumStamps);
     private readonly List<GameObject> strokeVisuals = new List<GameObject>(MaximumStamps);
     private readonly List<RectTransform> enemyMarkers = new List<RectTransform>();
-    private readonly HashSet<int> rewardedKills = new HashSet<int>();
 
     private Canvas plannerCanvas;
     private CanvasGroup plannerGroup;
@@ -68,21 +68,19 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
     private bool shooterWasEnabled;
     private bool aimWasEnabled;
     private bool cameraFollowWasEnabled;
-    private bool inputWasBlocked;
     private bool controlsCaptured;
-    private bool timeScaleCaptured;
-    private float timeScaleBeforePlanning = 1f;
     private bool drawing;
     private Vector2 lastDrawLocal;
     private float nextMarkerRefresh;
     private float openingProgress;
     private Coroutine strikeRoutine;
+    private TankBattleProgression progression;
 
     public bool IsPlanning { get; private set; }
     public bool IsActive { get; private set; }
     public bool IsRecenteringCursor { get; private set; }
     public int StrokeCapacity => MaximumStamps;
-    public int DamagePerImpact => BlastDamage;
+    public int DamagePerImpact => CalculateDamageForUpgradeTiers(GetUpgradeTierCount());
     public float DamageRadius => BlastRadius;
     public int StrokePointCount => strokeWorldPoints.Count;
     public int EnemyMarkerCount { get; private set; }
@@ -98,6 +96,13 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
         rewards = combatRewards;
         projectilePrefab = shellPrefab;
         gameplayCamera = mainCamera;
+        progression = GetComponent<TankBattleProgression>();
+    }
+
+    public static int CalculateDamageForUpgradeTiers(int totalUpgradeTiers)
+    {
+        float multiplier = 1f + Mathf.Max(0, totalUpgradeTiers) * DamageGrowthPerUpgradeTier;
+        return Mathf.Max(1, Mathf.RoundToInt(BlastDamage * multiplier));
     }
 
     private void OnEnable()
@@ -133,8 +138,7 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
             return;
         }
 
-        Keyboard keyboard = Keyboard.current;
-        if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+        if (TankiInput.CancelPressed)
         {
             CancelPlanning();
             return;
@@ -220,7 +224,6 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
 
         LastStrikeImpactCount = impactPoints.Count;
         ResolvedImpactCount = 0;
-        rewardedKills.Clear();
         HidePlanner();
         IsActive = true;
         strikeRoutine = StartCoroutine(RunBombardment(impactPoints));
@@ -272,6 +275,7 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
         ResolvedImpactCount++;
         ImpactExplosion.SpawnBombardment(position);
         TopDownCameraFollow.ShakeAllExplosions(1.4f);
+        int impactDamage = DamagePerImpact;
 
         // Damage is measured across the ground plane. A shell can hit a roof, a
         // prop or uneven terrain, so a 3D overlap sphere could otherwise miss a
@@ -298,14 +302,20 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
                 continue;
             }
 
-            health.TakeDamage(BlastDamage);
+            health.TakeDamage(impactDamage, false, gameObject);
             bool fatal = !health.IsAlive;
             ProjectileMovement.NotifyTankDamaged(targetPoint, fatal);
-            if (fatal && rewardedKills.Add(health.GetInstanceID()))
-            {
-                rewards?.RegisterKill();
-            }
         }
+    }
+
+    private int GetUpgradeTierCount()
+    {
+        if (progression == null)
+        {
+            progression = GetComponent<TankBattleProgression>();
+        }
+
+        return progression != null ? progression.TotalUpgradeTierCount : 0;
     }
 
     internal void BeginDraw(Vector2 screenPosition, Camera eventCamera)
@@ -554,26 +564,20 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
         shooterWasEnabled = shooter != null && shooter.enabled;
         aimWasEnabled = turretAim != null && turretAim.enabled;
         cameraFollowWasEnabled = cameraFollow != null && cameraFollow.enabled;
-        inputWasBlocked = PlayerHealthBar.GameplayInputBlocked;
         controlsCaptured = true;
-        timeScaleBeforePlanning = Time.timeScale;
-        timeScaleCaptured = true;
 
         controller?.SetMovementLocked(true);
         if (shooter != null) shooter.enabled = false;
         if (turretAim != null) turretAim.enabled = false;
         if (cameraFollow != null) cameraFollow.enabled = false;
-        PlayerHealthBar.GameplayInputBlocked = true;
-        Time.timeScale = 0f;
+        GameplayModalState.Set(GameplayBlockReason.BombardmentPlanner, true, true);
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
     }
 
     private void RestorePlanningTimeScale()
     {
-        if (!timeScaleCaptured) return;
-        Time.timeScale = timeScaleBeforePlanning;
-        timeScaleCaptured = false;
+        GameplayModalState.Set(GameplayBlockReason.BombardmentPlanner, false, true);
     }
 
     private void RestorePlanningControls()
@@ -583,8 +587,6 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
         if (shooter != null) shooter.enabled = shooterWasEnabled;
         if (turretAim != null) turretAim.enabled = aimWasEnabled;
         if (cameraFollow != null) cameraFollow.enabled = cameraFollowWasEnabled;
-        TankHealth health = GetComponent<TankHealth>();
-        PlayerHealthBar.GameplayInputBlocked = health != null && !health.IsAlive ? true : inputWasBlocked;
         controlsCaptured = false;
     }
 
@@ -682,9 +684,7 @@ public sealed class TankBombardmentUltimate : MonoBehaviour
         plannerCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
         plannerCanvas.sortingOrder = 320;
         CanvasScaler scaler = root.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1280f, 720f);
-        scaler.matchWidthOrHeight = .5f;
+        TankiUiLayout.ConfigureScaler(scaler, new Vector2(1280f, 720f));
         plannerGroup = root.GetComponent<CanvasGroup>();
 
         RectTransform dim = CreateStretchRect(root.transform, "Tactical Dim");

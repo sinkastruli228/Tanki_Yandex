@@ -1,6 +1,5 @@
 using System;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 [DisallowMultipleComponent]
 public sealed class TankCombatRewards : MonoBehaviour
@@ -32,14 +31,13 @@ public sealed class TankCombatRewards : MonoBehaviour
             specialCharge = Mathf.Min(1f, specialCharge + PassiveChargePerSecond * Time.deltaTime);
         }
 
-        Keyboard keyboard = Keyboard.current;
-        if (keyboard != null && keyboard.tKey.wasPressedThisFrame)
+        if (TankiInput.DebugChargePressed)
         {
             ForceChargeSpecial();
             return;
         }
 
-        if (keyboard != null && keyboard.qKey.wasPressedThisFrame)
+        if (TankiInput.SpecialPressed)
         {
             RequestSpecialActivation();
         }

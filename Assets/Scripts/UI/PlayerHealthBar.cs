@@ -6,7 +6,7 @@ using UnityEngine.UI;
 [DisallowMultipleComponent]
 public sealed class PlayerHealthBar : MonoBehaviour
 {
-    public static bool GameplayInputBlocked { get; set; }
+    public static bool GameplayInputBlocked { get; private set; }
 
     [SerializeField] private TankHealth target;
     [SerializeField] private Image fillImage;
@@ -42,9 +42,7 @@ public sealed class PlayerHealthBar : MonoBehaviour
         menuButton = menu;
         gameplayCursorImage = cursorImage;
         gameOverShown = false;
-        GameplayInputBlocked = false;
-
-        Time.timeScale = 1f;
+        GameplayModalState.Set(GameplayBlockReason.Defeat, false, false);
         SetPlayerControlEnabled(true);
         SetCameraFrozen(false);
         SetGameplayCursorActive(true);
@@ -99,10 +97,10 @@ public sealed class PlayerHealthBar : MonoBehaviour
     private void ShowGameOver()
     {
         gameOverShown = true;
-        GameplayInputBlocked = true;
+        GameplayModalState.Set(GameplayBlockReason.Defeat, true, false);
+        TankiPlatformServices.SetBattleActive(false);
         SetPlayerControlEnabled(false);
         SetCameraFrozen(true);
-        Time.timeScale = 1f;
         SetGameplayCursorActive(false);
         if (gameOverPanel != null) gameOverPanel.transform.SetAsLastSibling();
         FindFirstObjectByType<SceneAudioController>()?.StopMusicForDefeat();
@@ -215,4 +213,9 @@ public sealed class PlayerHealthBar : MonoBehaviour
     }
 
     private static void ReturnToMenu() => TankiGameplayBootstrap.ReturnToMainMenu();
+
+    internal static void SetGameplayInputBlocked(bool blocked)
+    {
+        GameplayInputBlocked = blocked;
+    }
 }

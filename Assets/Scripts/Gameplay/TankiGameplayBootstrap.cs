@@ -11,23 +11,24 @@ using UnityEditor;
 
 public static class TankiGameplayBootstrap
 {
-    private const string TankPrefabPath = "Assets/Models/Tank/Tank.prefab";
-    private const string TankDesertPrefabPath = "Assets/Models/Tank/Tank Desert.prefab";
-    private const string TankSnowPrefabPath = "Assets/Models/Tank/Tank Snow.prefab";
-    private const string TankEnemyPrefabPath = "Assets/Models/Tank/Tank Enemy.prefab";
-    private const string TankMausPrefabPath = "Assets/Models/Tank/Tank_Maus.prefab";
-    private const string MissilePrefabPath = "Assets/Models/Missle/Missile.prefab";
-    private const string BoxPrefabPath = "Assets/Models/Box/Box.prefab";
-    private const string ScopeSpritePath = "Assets/UI/Scope.png";
-    private const string HitMarkerSpritePath = "Assets/UI/Hit_Marker.png";
-    private const string EnemyMarkerSpritePath = "Assets/UI/Enemy Marker.png";
+    // Runtime resources are the canonical copies in both editor and player builds.
+    private const string TankPrefabPath = "Assets/Resources/Models/Tank/Tank.prefab";
+    private const string TankDesertPrefabPath = "Assets/Resources/Models/Tank/Tank Desert.prefab";
+    private const string TankSnowPrefabPath = "Assets/Resources/Models/Tank/Tank Snow.prefab";
+    private const string TankEnemyPrefabPath = "Assets/Resources/Models/Tank/Tank Enemy.prefab";
+    private const string TankMausPrefabPath = "Assets/Resources/Models/Tank/Tank_Maus.prefab";
+    private const string MissilePrefabPath = "Assets/Resources/Models/Missle/Missile.prefab";
+    private const string BoxPrefabPath = "Assets/Resources/Models/Box/Box.prefab";
+    private const string ScopeSpritePath = "Assets/Resources/UI/Scope.png";
+    private const string HitMarkerSpritePath = "Assets/Resources/UI/Hit_Marker.png";
+    private const string EnemyMarkerSpritePath = "Assets/Resources/UI/Enemy_Marker.png";
     private const string RuntimeTankModelRootName = "Runtime Tank Model";
-    private const string AmbientClipPath = "Assets/Sounds/Ambient.mp3";
-    private const string MovementClipPath = "Assets/Sounds/Movement.mp3";
-    private const string MusicAmbientClipPath = "Assets/Sounds/Music_Ambient.mp3";
-    private const string ShotClipPath = "Assets/Sounds/Shot.mp3";
-    private const string RicochetClipPath = "Assets/Sounds/Richoshet.mp3";
-    private const string ExplosionClipPath = "Assets/Sounds/Explosion.mp3";
+    private const string AmbientClipPath = "Assets/Resources/Sounds/Ambient.mp3";
+    private const string MovementClipPath = "Assets/Resources/Sounds/Movement.mp3";
+    private const string MusicAmbientClipPath = "Assets/Resources/Sounds/Music_Ambient.mp3";
+    private const string ShotClipPath = "Assets/Resources/Sounds/Shot.mp3";
+    private const string RicochetClipPath = "Assets/Resources/Sounds/Richoshet.mp3";
+    private const string ExplosionClipPath = "Assets/Resources/Sounds/Explosion.mp3";
     private const float GroundY = 0f;
     private const float FloorSize = 960f;
     private const float FloorTileSize = 8f;
@@ -108,8 +109,8 @@ public static class TankiGameplayBootstrap
         }
 
         lastSetupFrame = Time.frameCount;
-        Time.timeScale = 1f;
-        PlayerHealthBar.GameplayInputBlocked = false;
+        GameplayModalState.Reset();
+        TankiPlatformServices.SetBattleActive(false);
         battleStarted = false;
         infiniteMode = false;
 
@@ -242,7 +243,7 @@ public static class TankiGameplayBootstrap
         {
             playerUi.SetActive(false);
             SetPlayerTankControl(false);
-            PlayerHealthBar.GameplayInputBlocked = true;
+            GameplayModalState.Set(GameplayBlockReason.Garage, true, true);
             SetGameplayAudioMuted(true);
         }
 
@@ -304,7 +305,7 @@ public static class TankiGameplayBootstrap
         else if (skin == 2) ApplySnowTankSkin(currentTank);
         else ApplyNormalTankSkin(currentTank);
         SetPlayerTankControl(false);
-        PlayerHealthBar.GameplayInputBlocked = true;
+        GameplayModalState.Set(GameplayBlockReason.Garage, true, true);
         currentPlayerHealth.Configure(TankTeam.Player, GetPlayerMaxHealth(currentTank), false);
         var follow = currentCamera.GetComponent<TopDownCameraFollow>();
         follow.Configure(currentTank.transform, TopDownCameraFollow.DefaultOffset, TopDownCameraFollow.DefaultLookOffset);
@@ -317,8 +318,8 @@ public static class TankiGameplayBootstrap
 
     public static void FinishBattleFromGarage()
     {
-        Time.timeScale = 1;
-        PlayerHealthBar.GameplayInputBlocked = false;
+        TankiPlatformServices.SetBattleActive(true);
+        GameplayModalState.Set(GameplayBlockReason.Garage, false, true);
         SetPlayerTankControl(true);
         currentCamera.GetComponent<TopDownCameraFollow>().enabled = true;
         SetGameplayAudioMuted(false);
@@ -351,7 +352,8 @@ public static class TankiGameplayBootstrap
 
     public static void QuitGame()
     {
-        Time.timeScale = 1f;
+        TankiPlatformServices.SetBattleActive(false);
+        GameplayModalState.Reset();
 #if UNITY_EDITOR
         EditorApplication.isPlaying = false;
 #else
@@ -363,10 +365,10 @@ public static class TankiGameplayBootstrap
 
     private static void ReloadGameplayScene()
     {
-        Time.timeScale = 1f;
+        TankiPlatformServices.SetBattleActive(false);
+        GameplayModalState.Reset();
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
-        PlayerHealthBar.GameplayInputBlocked = false;
         battleStarted = false;
         infiniteMode = false;
         ResetCurrentTankToInitialPose();
@@ -874,6 +876,8 @@ public static class TankiGameplayBootstrap
         MuzzleShotEffect muzzleEffect = EnsureComponent<MuzzleShotEffect>(enemy);
         muzzleEffect.Configure(muzzlePoint, DefaultForwardAxis);
         enemyTank.ConfigureShotEffect(muzzleEffect);
+
+        EnemyLevelScaling.ApplyToEnemy(enemy);
 
         TankWorldHealthBar worldHealthBar = EnsureComponent<TankWorldHealthBar>(enemy);
         worldHealthBar.Configure(enemyHealth, currentCamera != null ? currentCamera : Camera.main);
@@ -1832,8 +1836,7 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         canvas.sortingOrder = 100;
 
         CanvasScaler canvasScaler = EnsureComponent<CanvasScaler>(root);
-        canvasScaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        canvasScaler.referenceResolution = new Vector2(1280f, 720f);
+        TankiUiLayout.ConfigureScaler(canvasScaler, new Vector2(1280f, 720f));
 
         EnsureComponent<GraphicRaycaster>(root);
         EnsureEventSystem();
@@ -2169,8 +2172,10 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
 
         Transform legacyHint = chargeBackgroundRect.Find("Q Hint");
         if (legacyHint != null) { legacyHint.gameObject.SetActive(false); Object.Destroy(legacyHint.gameObject); }
+        Transform legacyShortcut = chargeBackgroundRect.Find("Q Shortcut");
+        if (legacyShortcut != null) legacyShortcut.name = "E Shortcut";
         RectTransform shortcutRect;
-        Image shortcutBackground = GetOrCreateImage(chargeBackgroundRect, "Q Shortcut", out shortcutRect);
+        Image shortcutBackground = GetOrCreateImage(chargeBackgroundRect, "E Shortcut", out shortcutRect);
         shortcutRect.anchorMin = shortcutRect.anchorMax = new Vector2(1f, 0f);
         shortcutRect.pivot = new Vector2(1f, 0f);
         shortcutRect.anchoredPosition = new Vector2(-12f, 12f);
@@ -2185,7 +2190,7 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         shortcutLabelRect.anchorMin = Vector2.zero;
         shortcutLabelRect.anchorMax = Vector2.one;
         shortcutLabelRect.offsetMin = shortcutLabelRect.offsetMax = Vector2.zero;
-        shortcutLabel.text = "Q";
+        shortcutLabel.text = "E";
         shortcutLabel.alignment = TextAnchor.MiddleCenter;
         shortcutLabel.fontSize = 18;
         shortcutLabel.fontStyle = FontStyle.Bold;
@@ -2354,7 +2359,7 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
 
             Button button = EnsureComponent<Button>(card.gameObject);
             button.targetGraphic = card;
-            button.navigation = new Navigation { mode = Navigation.Mode.None };
+            button.navigation = new Navigation { mode = Navigation.Mode.Automatic };
             ColorBlock colors = button.colors;
             colors.normalColor = Color.white;
             colors.highlightedColor = new Color(1.08f, 1.08f, 1.08f, 1f);
@@ -2409,12 +2414,14 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
             descriptions[i].fontSize = 14;
             descriptions[i].color = muted;
             descriptions[i].raycastTarget = false;
+            descriptions[i].text = string.Empty;
+            descriptions[i].gameObject.SetActive(false);
 
             RectTransform scaleRect;
             Image tierScale = GetOrCreateImage(cardRect, "Tier Scale", out scaleRect);
             scaleRect.anchorMin = scaleRect.anchorMax = new Vector2(.5f, 1f);
             scaleRect.pivot = new Vector2(.5f, 1f);
-            scaleRect.anchoredPosition = new Vector2(0f, -218f);
+            scaleRect.anchoredPosition = new Vector2(0f, -182f);
             scaleRect.sizeDelta = new Vector2(250f, 14f);
             tierScale.color = Color.clear;
             tierScale.raycastTarget = false;
@@ -2467,9 +2474,7 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 200;
         var scaler = root.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1600, 900);
-        scaler.matchWidthOrHeight = 0;
+        TankiUiLayout.ConfigureScaler(scaler, new Vector2(1600f, 900f));
         EnsureEventSystem();
         var panel = new GameObject("Garage Panel", typeof(RectTransform));
         var rect = panel.GetComponent<RectTransform>();
@@ -2484,6 +2489,7 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         restartBattleAfterReload = false;
         currentMainMenu = root.AddComponent<MainMenuController>();
         currentMainMenu.Configure(view, camera, tank, startImmediately, startSkin, startInfinite);
+        TankiPlatformServices.NotifyGameReady();
         return currentMainMenu;
     }
 
@@ -2613,8 +2619,11 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
 
     private static Image EnsureHitMarker(Transform parent, Canvas canvas)
     {
+        Transform feedbackLayer = EnsureCombatFeedbackLayer(parent);
+        Transform legacyMarker = parent.Find("Hit Marker");
+        if (legacyMarker != null) legacyMarker.SetParent(feedbackLayer, false);
         RectTransform markerRect;
-        Image markerImage = GetOrCreateImage(parent, "Hit Marker", out markerRect);
+        Image markerImage = GetOrCreateImage(feedbackLayer, "Hit Marker", out markerRect);
         markerRect.anchorMin = new Vector2(0.5f, 0.5f);
         markerRect.anchorMax = new Vector2(0.5f, 0.5f);
         markerRect.pivot = new Vector2(0.5f, 0.5f);
@@ -2636,8 +2645,11 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
 
     private static Image EnsureEnemyMarkers(Transform parent, Canvas canvas)
     {
+        Transform feedbackLayer = EnsureCombatFeedbackLayer(parent);
+        Transform legacyTemplate = parent.Find("Enemy Marker Template");
+        if (legacyTemplate != null) legacyTemplate.SetParent(feedbackLayer, false);
         RectTransform markerRect;
-        Image markerImage = GetOrCreateImage(parent, "Enemy Marker Template", out markerRect);
+        Image markerImage = GetOrCreateImage(feedbackLayer, "Enemy Marker Template", out markerRect);
         markerRect.anchorMin = new Vector2(0.5f, 0.5f);
         markerRect.anchorMax = new Vector2(0.5f, 0.5f);
         markerRect.pivot = new Vector2(0.5f, 0.5f);
@@ -2659,6 +2671,22 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         EnemyScreenMarkerDisplay markerDisplay = EnsureComponent<EnemyScreenMarkerDisplay>(parent.gameObject);
         markerDisplay.Configure(markerImage, canvas);
         return markerImage;
+    }
+
+    private static RectTransform EnsureCombatFeedbackLayer(Transform parent)
+    {
+        Transform existing = parent.Find("Combat Feedback Layer");
+        RectTransform layer = existing != null
+            ? existing as RectTransform
+            : new GameObject("Combat Feedback Layer", typeof(RectTransform)).GetComponent<RectTransform>();
+        layer.SetParent(parent, false);
+        layer.anchorMin = Vector2.zero;
+        layer.anchorMax = Vector2.one;
+        layer.pivot = new Vector2(.5f, .5f);
+        layer.anchoredPosition = Vector2.zero;
+        layer.offsetMin = Vector2.zero;
+        layer.offsetMax = Vector2.zero;
+        return layer;
     }
 
     private static Image EnsureDamageVignette(Transform parent)
@@ -2780,7 +2808,7 @@ private static T LoadProjectAsset<T>(string assetPath) where T : Object
         colors.fadeDuration = .1f;
         button.colors = colors;
         Navigation navigation = button.navigation;
-        navigation.mode = Navigation.Mode.None;
+        navigation.mode = Navigation.Mode.Automatic;
         button.navigation = navigation;
         EnsureComponent<GarageUiMotion>(button.gameObject);
 

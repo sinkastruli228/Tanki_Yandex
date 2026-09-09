@@ -43,7 +43,6 @@ public sealed class TopDownCameraFollow : MonoBehaviour
     private Transform aimTurret;
     private Camera turretCamera;
     private bool turretCameraActive;
-    private bool rightButtonWasHeld;
     private float turretCameraActivatedAt;
     private Vector3 turretTransitionStartPosition;
     private Quaternion turretTransitionStartRotation;
@@ -197,11 +196,8 @@ public sealed class TopDownCameraFollow : MonoBehaviour
             return;
         }
 
-        Mouse mouse = Mouse.current;
-        bool rightButtonHeld = mouse != null && mouse.rightButton.isPressed;
-        if (!rightButtonHeld || rightButtonWasHeld)
+        if (!TankiInput.TurretViewTogglePressed)
         {
-            rightButtonWasHeld = rightButtonHeld;
             return;
         }
 
@@ -212,7 +208,6 @@ public sealed class TopDownCameraFollow : MonoBehaviour
         turretTransitionStartRotation = transform.rotation;
         velocity = Vector3.zero;
         orbitYawVelocity = 0f;
-        rightButtonWasHeld = true;
     }
 
     private void OnValidate()
@@ -330,7 +325,7 @@ public sealed class TopDownCameraFollow : MonoBehaviour
             input -= 1f;
         }
 
-        if (keyboard.eKey.isPressed)
+        if (keyboard.rKey.isPressed)
         {
             input += 1f;
         }

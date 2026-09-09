@@ -125,9 +125,9 @@ public static class BombardmentUltimateChecks
 
     private static void OpenPlanner()
     {
-        Check(rewards.IsFullyCharged && !rewards.IsSpecialArmed, "Bombardment waits at full charge for Q");
+        Check(rewards.IsFullyCharged && !rewards.IsSpecialArmed, "Bombardment waits at full charge for E");
         Check(!bombardment.IsPlanning && !bombardment.IsActive, "Bombardment does not start automatically");
-        Check(rewards.RequestSpecialActivation(), "Q activation request opens bombardment planning");
+        Check(rewards.RequestSpecialActivation(), "E activation request opens bombardment planning");
         stage = 3;
         due = EditorApplication.timeSinceStartup + .35;
     }
@@ -142,6 +142,10 @@ public static class BombardmentUltimateChecks
         Check(Time.timeScale == 0f, "Battle pauses while the strike zone is painted");
         Check(bombardment.StrokeCapacity == 41, "Available painted route is halved again");
         Check(bombardment.DamagePerImpact == 100, "Bombardment impact damage is 100");
+        Check(Mathf.Approximately(TankBombardmentUltimate.DamageGrowthPerUpgradeTier, .4f)
+            && TankBombardmentUltimate.CalculateDamageForUpgradeTiers(1) == 140
+            && TankBombardmentUltimate.CalculateDamageForUpgradeTiers(5) == 300,
+            "Every selected tank upgrade tier adds 40 percent of base bombardment damage");
         Check(Mathf.Approximately(bombardment.DamageRadius, 10.5f), "Bombardment damage radius is reduced by 30 percent");
         Check(bombardment.PlannerRoot.transform.Find("Bombardment Console/Hint") == null, "Planner instruction caption is removed");
         Check(bombardment.PlannerRoot.transform.Find("Bombardment Console/Route Status/Ink Hint") == null, "Route helper caption is removed");

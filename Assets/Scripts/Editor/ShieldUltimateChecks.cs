@@ -147,17 +147,17 @@ public static class ShieldUltimateChecks
     private static void CheckChargedShieldWaitsForInput()
     {
         Check(rewards.IsFullyCharged && !rewards.IsSpecialArmed, "Shield can be fully charged without being armed");
-        Check(!shield.IsActive, "A charged shield waits for the Q activation request");
+        Check(!shield.IsActive, "A charged shield waits for the E activation request");
         RectTransform combatPanel = GameObject.Find("Special Charge Background").GetComponent<RectTransform>();
         Check(combatPanel.rect.width >= 260f && combatPanel.Find("Ultimate Name") != null && combatPanel.Find("Charge Track") != null, "Combat ultimate HUD uses the garage card style");
-        Check(rewards.RequestSpecialActivation(), "Q activation request is accepted when the shield is charged");
+        Check(rewards.RequestSpecialActivation(), "E activation request is accepted when the shield is charged");
         stage = 3;
         due = EditorApplication.timeSinceStartup + 0.2;
     }
 
     private static void CheckActivationAndMovementLock()
     {
-        Check(shield.IsActive, "Shield activates after the Q activation request");
+        Check(shield.IsActive, "Shield activates after the E activation request");
         Check(controller.MovementLocked, "Shield locks chassis movement");
         Check(health.IsDamageBlocked, "Shield blocks player damage");
         Check(health.GetComponent<TankShooter>().enabled && health.GetComponent<TankTurretAim>().enabled, "Turret aiming and firing remain enabled");

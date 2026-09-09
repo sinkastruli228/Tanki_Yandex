@@ -12,6 +12,10 @@ public sealed class TankWorldHealthBar : MonoBehaviour
     [SerializeField] private Camera targetCamera;
     [SerializeField] private Canvas canvas;
     [SerializeField] private Image fillImage;
+    private int displayedMaxHealth = -1;
+    private int segmentCount = 1;
+
+    public int SegmentCount => segmentCount;
 
     public void Configure(TankHealth tankHealth, Camera cameraOverride)
     {
@@ -164,6 +168,46 @@ public sealed class TankWorldHealthBar : MonoBehaviour
         RectTransform fillRect = fillImage.rectTransform;
         fillRect.sizeDelta = new Vector2((Width - .16f) * target.Normalized, Height - .12f);
         fillImage.gameObject.SetActive(target.IsAlive);
+        RefreshSegments();
+    }
+
+    private void RefreshSegments()
+    {
+        if (canvas == null || target == null || displayedMaxHealth == target.MaxHealth)
+        {
+            return;
+        }
+
+        displayedMaxHealth = target.MaxHealth;
+        segmentCount = target.Team == TankTeam.Enemy && target.MaxHealth > 100
+            ? Mathf.CeilToInt(target.MaxHealth / 100f)
+            : 1;
+
+        Transform root = canvas.transform;
+        for (int childIndex = 0; childIndex < root.childCount; childIndex++)
+        {
+            Transform child = root.GetChild(childIndex);
+            if (child.name.StartsWith("Health Segment Divider "))
+            {
+                child.gameObject.SetActive(false);
+            }
+        }
+
+        for (int segment = 1; segment < segmentCount; segment++)
+        {
+            Image divider = GetOrCreateImage(root, $"Health Segment Divider {segment}");
+            float position = Mathf.Clamp01(segment * 100f / target.MaxHealth);
+            RectTransform dividerRect = divider.rectTransform;
+            dividerRect.anchorMin = new Vector2(position, .12f);
+            dividerRect.anchorMax = new Vector2(position, .88f);
+            dividerRect.pivot = new Vector2(.5f, .5f);
+            dividerRect.anchoredPosition = Vector2.zero;
+            dividerRect.sizeDelta = new Vector2(.035f, 0f);
+            divider.color = new Color(.025f, .045f, .04f, .92f);
+            divider.raycastTarget = false;
+            divider.gameObject.SetActive(true);
+            divider.transform.SetAsLastSibling();
+        }
     }
 
     private static Image GetOrCreateImage(Transform parent, string name)

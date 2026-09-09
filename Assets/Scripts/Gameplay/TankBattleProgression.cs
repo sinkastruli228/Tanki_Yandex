@@ -1,4 +1,6 @@
+using System.Collections;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 public enum TankUpgradeType
@@ -17,6 +19,7 @@ public sealed class TankBattleProgression : MonoBehaviour
     public const int CriticalKillBonusExperience = 50;
     public const int InitialExperienceRequirement = 100;
 
+    private static readonly float[] CannonTierBonuses = { .5f, .5f, .5f, .5f, .5f };
     private static readonly float[] TierBonuses = { .5f, .4f, .3f, .2f, .1f };
     private static readonly float[] MobilityTierBonuses = { .10f, .08f, .06f, .04f, .02f };
 
@@ -43,9 +46,16 @@ public sealed class TankBattleProgression : MonoBehaviour
     private Text[] cardNames;
     private Text[] cardDescriptions;
     private Text[] cardBonuses;
+    private RectTransform selectorPanel;
+    private Image overlayImage;
+    private Vector2 selectorHomePosition;
+    private float overlayVisibleAlpha;
+    private Coroutine selectionRoutine;
     private readonly TankUpgradeType[] offers = new TankUpgradeType[3];
     private int pendingLevelUps;
     private bool selectionOpen;
+    private bool selectionAnimating;
+    private bool choiceCommitted;
     private bool initialized;
     private float displayedExperience;
     private float targetExperience;
@@ -59,9 +69,11 @@ public sealed class TankBattleProgression : MonoBehaviour
     public int CannonTier => cannonTier;
     public int ArmorTier => armorTier;
     public int MobilityTier => mobilityTier;
+    public int TotalUpgradeTierCount => cannonTier + armorTier + mobilityTier;
     public bool IsSelectionOpen => selectionOpen;
+    public bool IsSelectionAnimating => selectionAnimating;
     public float ExperienceNormalized => displayedExperience;
-    public float WeaponMultiplier => CalculateMultiplier(cannonTier);
+    public float WeaponMultiplier => CalculateCannonMultiplier(cannonTier);
     public float HealthMultiplier => CalculateMultiplier(armorTier);
     public float SpeedMultiplier => CalculateMobilityMultiplier(mobilityTier);
     public float NitroCapacityMultiplier => CalculateMobilityMultiplier(mobilityTier);
@@ -78,9 +90,31 @@ public sealed class TankBattleProgression : MonoBehaviour
         return TierBonuses[Mathf.Clamp(tierIndex, 0, TierBonuses.Length - 1)];
     }
 
+    public static float GetCannonTierBonus(int tierIndex)
+    {
+        return CannonTierBonuses[Mathf.Clamp(tierIndex, 0, CannonTierBonuses.Length - 1)];
+    }
+
     public static float GetMobilityTierBonus(int tierIndex)
     {
         return MobilityTierBonuses[Mathf.Clamp(tierIndex, 0, MobilityTierBonuses.Length - 1)];
+    }
+
+    public static int GetExperienceRequirementGrowthPercent(int currentLevel)
+    {
+        currentLevel = Mathf.Max(1, currentLevel);
+        if (currentLevel == 1) return 50;
+        if (currentLevel == 2) return 40;
+        if (currentLevel == 3) return 30;
+        if (currentLevel == 4) return 20;
+        return Mathf.Max(1, 15 - currentLevel);
+    }
+
+    public static int CalculateNextExperienceRequirement(int currentRequirement, int currentLevel)
+    {
+        int safeRequirement = Mathf.Max(1, currentRequirement);
+        int growthPercent = GetExperienceRequirementGrowthPercent(currentLevel);
+        return Mathf.Max(safeRequirement + 1, Mathf.CeilToInt(safeRequirement * (1f + growthPercent / 100f)));
     }
 
     public void ConfigureGameplay(TankHealth playerHealth, TankShooter playerShooter, TankController playerController)
@@ -99,6 +133,7 @@ public sealed class TankBattleProgression : MonoBehaviour
             cannonTier = armorTier = mobilityTier = 0;
             pendingLevelUps = 0;
             displayedExperience = targetExperience = 0f;
+            EnemyLevelScaling.ResetForBattle();
         }
         ApplyUpgrades();
     }
@@ -129,6 +164,13 @@ public sealed class TankBattleProgression : MonoBehaviour
         cardNames = names;
         cardDescriptions = descriptions;
         cardBonuses = bonuses;
+        selectorPanel = choiceRoot != null ? choiceRoot.transform.Find("Upgrade Card Panel") as RectTransform : null;
+        overlayImage = choiceRoot != null ? choiceRoot.GetComponent<Image>() : null;
+        if (selectorPanel != null)
+        {
+            selectorHomePosition = selectorPanel.anchoredPosition;
+        }
+        overlayVisibleAlpha = overlayImage != null ? overlayImage.color.a : 0f;
 
         if (experienceFill != null && experienceFill.rectTransform.parent is RectTransform track)
         {
@@ -165,10 +207,15 @@ public sealed class TankBattleProgression : MonoBehaviour
         {
             experience -= experienceRequired;
             lastCompletedRequirement = experienceRequired;
-            experienceRequired = Mathf.Min(int.MaxValue, experienceRequired * 2);
+            experienceRequired = CalculateNextExperienceRequirement(experienceRequired, level);
             level++;
             leveledUp = true;
             if (HasAvailableUpgrade()) pendingLevelUps++;
+        }
+
+        if (leveledUp)
+        {
+            EnemyLevelScaling.SetPlayerLevel(level);
         }
 
         targetExperience = leveledUp && pendingLevelUps > 0 ? 1f : CurrentExperienceNormalized();
@@ -179,33 +226,32 @@ public sealed class TankBattleProgression : MonoBehaviour
 
     public void ChooseCard(int cardIndex)
     {
-        if (!selectionOpen || cardIndex < 0 || cardIndex >= offers.Length)
+        if (!selectionOpen || selectionAnimating || cardIndex < 0 || cardIndex >= offers.Length)
         {
             return;
         }
 
         TankUpgradeType selected = offers[cardIndex];
-        if (GetTier(selected) >= MaximumUpgradeTier)
+        int previousTier = GetTier(selected);
+        if (previousTier >= MaximumUpgradeTier)
         {
             return;
         }
 
-        SetTier(selected, GetTier(selected) + 1);
+        SetTier(selected, previousTier + 1);
         ApplyUpgrades();
         pendingLevelUps = Mathf.Max(0, pendingLevelUps - 1);
         targetExperience = pendingLevelUps > 0 ? 1f : CurrentExperienceNormalized();
-
-        if (pendingLevelUps > 0 && HasAvailableUpgrade())
-        {
-            BuildOffers();
-            RefreshCopy();
-        }
-        else
-        {
-            CloseSelection();
-        }
-
         RefreshHud();
+
+        choiceCommitted = true;
+        selectionAnimating = true;
+        SetCardButtonsInteractable(false);
+        if (selectionRoutine != null)
+        {
+            StopCoroutine(selectionRoutine);
+        }
+        selectionRoutine = StartCoroutine(AnimateChosenUpgrade(cardIndex, previousTier));
     }
 
     private void OnEnable()
@@ -242,6 +288,7 @@ public sealed class TankBattleProgression : MonoBehaviour
         }
 
         selectionOpen = true;
+        choiceCommitted = false;
         BuildOffers();
         if (choiceRoot != null)
         {
@@ -250,24 +297,40 @@ public sealed class TankBattleProgression : MonoBehaviour
         }
 
         SetCombatControls(false);
-        PlayerHealthBar.GameplayInputBlocked = true;
-        Time.timeScale = 0f;
+        GameplayModalState.Set(GameplayBlockReason.UpgradeSelection, true, true);
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
         RefreshCopy();
+        selectionAnimating = true;
+        SetCardButtonsInteractable(false);
+        if (selectionRoutine != null)
+        {
+            StopCoroutine(selectionRoutine);
+        }
+        selectionRoutine = StartCoroutine(AnimateSelectionEntrance());
     }
 
-    private void CloseSelection()
+    private void CompleteSelection()
     {
         selectionOpen = false;
+        choiceCommitted = false;
         if (choiceRoot != null) choiceRoot.SetActive(false);
-        if (health == null || !health.IsAlive) return;
+        selectionAnimating = false;
+        selectionRoutine = null;
+        if (health == null || !health.IsAlive)
+        {
+            return;
+        }
 
         SetCombatControls(true);
-        PlayerHealthBar.GameplayInputBlocked = false;
-        Time.timeScale = 1f;
+        GameplayModalState.Set(GameplayBlockReason.UpgradeSelection, false, true);
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.None;
+
+        if (pendingLevelUps > 0 && HasAvailableUpgrade())
+        {
+            TryOpenSelection();
+        }
     }
 
     private void BuildOffers()
@@ -296,22 +359,244 @@ public sealed class TankBattleProgression : MonoBehaviour
             TankUpgradeType type = offers[i];
             int tier = GetTier(type);
             bool available = tier < MaximumUpgradeTier;
-            cardButtons[i].interactable = available;
+            cardButtons[i].interactable = available && !selectionAnimating;
             if (cardIcons[i] != null) cardIcons[i].text = GetIcon(type);
             if (cardNames[i] != null) cardNames[i].text = GetName(type);
-            if (cardDescriptions[i] != null) cardDescriptions[i].text = GetDescription(type);
+            if (cardDescriptions[i] != null)
+            {
+                cardDescriptions[i].text = string.Empty;
+                cardDescriptions[i].gameObject.SetActive(false);
+            }
             if (cardBonuses[i] != null)
             {
-                float nextBonus = type == TankUpgradeType.Mobility
-                    ? MobilityTierBonuses[Mathf.Clamp(tier, 0, MaximumUpgradeTier - 1)]
-                    : TierBonuses[Mathf.Clamp(tier, 0, MaximumUpgradeTier - 1)];
                 cardBonuses[i].text = available
-                    ? $"+{Mathf.RoundToInt(nextBonus * 100f)}%"
+                    ? GameLanguage.Text("ПРОКАЧАТЬ", "UPGRADE")
                     : GameLanguage.Text("МАКСИМУМ", "MAXIMUM");
             }
             RefreshTierScale(i, tier);
         }
     }
+
+    private IEnumerator AnimateSelectionEntrance()
+    {
+        if (selectorPanel == null)
+        {
+            selectionAnimating = false;
+            RefreshCopy();
+            SelectFirstAvailableCard();
+            selectionRoutine = null;
+            yield break;
+        }
+
+        const float duration = .52f;
+        Vector2 startPosition = selectorHomePosition + Vector2.up * GetSelectionTravelDistance();
+        SetOverlayAlpha(0f);
+        selectorPanel.anchoredPosition = startPosition;
+        selectorPanel.localScale = Vector3.one * .97f;
+
+        for (float elapsed = 0f; elapsed < duration; elapsed += Time.unscaledDeltaTime)
+        {
+            float progress = Mathf.Clamp01(elapsed / duration);
+            float eased = OutBack(progress);
+            selectorPanel.anchoredPosition = Vector2.LerpUnclamped(startPosition, selectorHomePosition, eased);
+            selectorPanel.localScale = Vector3.one * Mathf.LerpUnclamped(.97f, 1f, eased);
+            SetOverlayAlpha(overlayVisibleAlpha * Mathf.SmoothStep(0f, 1f, progress));
+            yield return null;
+        }
+
+        selectorPanel.anchoredPosition = selectorHomePosition;
+        selectorPanel.localScale = Vector3.one;
+        SetOverlayAlpha(overlayVisibleAlpha);
+        selectionAnimating = false;
+        RefreshCopy();
+        SelectFirstAvailableCard();
+        selectionRoutine = null;
+    }
+
+    private IEnumerator AnimateChosenUpgrade(int cardIndex, int previousTier)
+    {
+        Image card = cardButtons != null && cardIndex >= 0 && cardIndex < cardButtons.Length
+            ? cardButtons[cardIndex].targetGraphic as Image
+            : null;
+        Image icon = card != null ? card.transform.Find("Icon")?.GetComponent<Image>() : null;
+        Image segment = card != null
+            ? card.transform.Find($"Tier Scale/Segment {previousTier + 1}")?.GetComponent<Image>()
+            : null;
+        Outline glow = card != null ? card.GetComponent<Outline>() : null;
+        if (card != null && glow == null)
+        {
+            glow = card.gameObject.AddComponent<Outline>();
+            glow.useGraphicAlpha = true;
+            glow.effectDistance = new Vector2(4f, -4f);
+        }
+
+        Color gold = new Color(.96f, .71f, .30f, 1f);
+        Color cardColor = card != null ? card.color : Color.white;
+        Color iconColor = icon != null ? icon.color : Color.white;
+        Color segmentColor = segment != null ? segment.color : Color.clear;
+        const float duration = .55f;
+
+        for (float elapsed = 0f; elapsed < duration; elapsed += Time.unscaledDeltaTime)
+        {
+            float progress = Mathf.Clamp01(elapsed / duration);
+            float fill = Mathf.SmoothStep(0f, 1f, progress);
+            float pulse = Mathf.Sin(progress * Mathf.PI);
+
+            if (segment != null)
+            {
+                segment.color = Color.Lerp(segmentColor, gold, fill);
+                segment.rectTransform.localScale = Vector3.one * (1f + pulse * .42f);
+            }
+            if (card != null)
+            {
+                card.color = Color.Lerp(cardColor, new Color(.58f, .48f, .25f, 1f), pulse * .78f);
+                card.rectTransform.localScale = Vector3.one * (1f + pulse * .025f);
+            }
+            if (icon != null)
+            {
+                icon.color = Color.Lerp(iconColor, new Color(.74f, .52f, .20f, 1f), pulse * .8f);
+            }
+            if (glow != null)
+            {
+                glow.effectColor = new Color(gold.r, gold.g, gold.b, pulse * .9f);
+            }
+
+            yield return null;
+        }
+
+        if (segment != null)
+        {
+            segment.color = gold;
+            segment.rectTransform.localScale = Vector3.one;
+        }
+        if (card != null)
+        {
+            card.color = cardColor;
+            card.rectTransform.localScale = Vector3.one;
+        }
+        if (icon != null) icon.color = iconColor;
+        if (glow != null) glow.effectColor = new Color(gold.r, gold.g, gold.b, 0f);
+
+        yield return new WaitForSecondsRealtime(.14f);
+        yield return AnimateSelectionExit();
+        CompleteSelection();
+    }
+
+    private IEnumerator AnimateSelectionExit()
+    {
+        if (selectorPanel == null)
+        {
+            yield break;
+        }
+
+        const float duration = .42f;
+        Vector2 endPosition = selectorHomePosition + Vector2.up * GetSelectionTravelDistance();
+        for (float elapsed = 0f; elapsed < duration; elapsed += Time.unscaledDeltaTime)
+        {
+            float progress = Mathf.Clamp01(elapsed / duration);
+            float eased = InBack(progress);
+            selectorPanel.anchoredPosition = Vector2.LerpUnclamped(selectorHomePosition, endPosition, eased);
+            selectorPanel.localScale = Vector3.one * Mathf.Lerp(1f, .97f, progress);
+            SetOverlayAlpha(overlayVisibleAlpha * (1f - Mathf.SmoothStep(0f, 1f, progress)));
+            yield return null;
+        }
+
+        selectorPanel.anchoredPosition = selectorHomePosition;
+        selectorPanel.localScale = Vector3.one;
+        SetOverlayAlpha(overlayVisibleAlpha);
+    }
+
+    private void SetCardButtonsInteractable(bool interactable)
+    {
+        if (cardButtons == null)
+        {
+            return;
+        }
+
+        foreach (Button cardButton in cardButtons)
+        {
+            if (cardButton != null) cardButton.interactable = interactable;
+        }
+    }
+
+    private void SelectFirstAvailableCard()
+    {
+        if (EventSystem.current == null || cardButtons == null)
+        {
+            return;
+        }
+
+        foreach (Button cardButton in cardButtons)
+        {
+            if (cardButton != null && cardButton.IsInteractable())
+            {
+                EventSystem.current.SetSelectedGameObject(cardButton.gameObject);
+                return;
+            }
+        }
+    }
+
+    private void SetOverlayAlpha(float alpha)
+    {
+        if (overlayImage == null)
+        {
+            return;
+        }
+
+        Color color = overlayImage.color;
+        color.a = alpha;
+        overlayImage.color = color;
+    }
+
+    private float GetSelectionTravelDistance()
+    {
+        return Mathf.Max(720f, selectorPanel != null ? selectorPanel.rect.height + 320f : 720f);
+    }
+
+    private static float OutBack(float value)
+    {
+        const float overshoot = 1.70158f;
+        float shifted = value - 1f;
+        return 1f + shifted * shifted * ((overshoot + 1f) * shifted + overshoot);
+    }
+
+    private static float InBack(float value)
+    {
+        const float overshoot = 1.45f;
+        return value * value * ((overshoot + 1f) * value - overshoot);
+    }
+
+#if UNITY_EDITOR
+    public void CompleteSelectionAnimationForTests()
+    {
+        if (!selectionAnimating)
+        {
+            return;
+        }
+
+        if (selectionRoutine != null)
+        {
+            StopCoroutine(selectionRoutine);
+            selectionRoutine = null;
+        }
+        if (selectorPanel != null)
+        {
+            selectorPanel.anchoredPosition = selectorHomePosition;
+            selectorPanel.localScale = Vector3.one;
+        }
+        SetOverlayAlpha(overlayVisibleAlpha);
+
+        if (choiceCommitted)
+        {
+            CompleteSelection();
+            return;
+        }
+
+        selectionAnimating = false;
+        RefreshCopy();
+        SelectFirstAvailableCard();
+    }
+#endif
 
     private void RefreshHud()
     {
@@ -375,6 +660,13 @@ public sealed class TankBattleProgression : MonoBehaviour
         return multiplier;
     }
 
+    private static float CalculateCannonMultiplier(int tier)
+    {
+        float multiplier = 1f;
+        for (int i = 0; i < Mathf.Clamp(tier, 0, MaximumUpgradeTier); i++) multiplier += CannonTierBonuses[i];
+        return multiplier;
+    }
+
     private static float CalculateMobilityMultiplier(int tier)
     {
         float multiplier = 1f;
@@ -420,10 +712,4 @@ public sealed class TankBattleProgression : MonoBehaviour
         return GameLanguage.Text("ДВИГАТЕЛЬ", "ENGINE");
     }
 
-    private static string GetDescription(TankUpgradeType type)
-    {
-        if (type == TankUpgradeType.Cannon) return GameLanguage.Text("Урон обычных и\nкритических выстрелов", "Normal and critical\nshot damage");
-        if (type == TankUpgradeType.Armor) return GameLanguage.Text("Максимальное здоровье\nи ремонт брони", "Maximum health\nand armor repair");
-        return GameLanguage.Text("Скорость танка и\nзапас закиси азота", "Tank speed and\nnitro capacity");
-    }
 }

@@ -40,11 +40,11 @@ public sealed class TankHealth : MonoBehaviour
         Changed?.Invoke(this);
     }
 
-    public void TakeDamage(int damage, bool critical = false)
+    public bool TakeDamage(int damage, bool critical = false, GameObject instigator = null)
     {
         if (damage <= 0 || currentHealth <= 0 || damageBlocked)
         {
-            return;
+            return false;
         }
 
         int previousHealth = currentHealth;
@@ -59,12 +59,15 @@ public sealed class TankHealth : MonoBehaviour
 
         if (currentHealth == 0)
         {
+            TankKillAttribution.Reward(instigator, this, critical);
             Died?.Invoke(this);
             if (destroyOnDeath)
             {
                 Destroy(gameObject);
             }
         }
+
+        return true;
     }
 
     public void SetDamageBlocked(bool blocked)
@@ -77,6 +80,14 @@ public sealed class TankHealth : MonoBehaviour
         int previousMax = maxHealth;
         maxHealth = Mathf.Max(1, Mathf.RoundToInt(BaseMaxHealth * Mathf.Max(1f, multiplier)));
         currentHealth = Mathf.Min(maxHealth, currentHealth + Mathf.Max(0, maxHealth - previousMax));
+        Changed?.Invoke(this);
+    }
+
+    public void SetMaxHealthMultiplierPreservingRatio(float multiplier)
+    {
+        float healthRatio = Normalized;
+        maxHealth = Mathf.Max(1, Mathf.RoundToInt(BaseMaxHealth * Mathf.Max(1f, multiplier)));
+        currentHealth = Mathf.Clamp(Mathf.RoundToInt(maxHealth * healthRatio), 0, maxHealth);
         Changed?.Invoke(this);
     }
 
